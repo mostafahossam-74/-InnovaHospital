@@ -66,6 +66,22 @@ async function holdProject(c: Client, wsId: string, actor: string, p: { id: stri
   await audit(c, wsId, actor, "project.hold", "project", p.id, { reason }, requestId);
 }
 
+/**
+ * Holds every active project whose approvals are no longer valid on `today` (YYYY-MM-DD) and
+ * lists decisions expiring within 60 days. Called by the expiry-check route and the scheduler.
+ */
+export async function expirySweep(c: Client, wsId: string, actor: string, today: string, correlationId: string) {
+  const active = (await c.query("SELECT id, stage, protocol_version FROM project WHERE stage = 'active'")).rows;
+  const held: { id: string; problems: string[] }[] = [];
+  for (const p of active) {
+    const problems = await gateProblems(c, p.id, p.protocol_version, today);
+    if (problems.length) { await holdProject(c, wsId, actor, p, problems.join("; "), correlationId); held.push({ id: p.id, problems }); }
+  }
+  const expiring = (await c.query(`SELECT g.project_id, p.title, g.kind, g.expiry_date FROM governance_decision g JOIN project p ON p.id = g.project_id
+    WHERE NOT g.superseded AND g.expiry_date BETWEEN $1::date AND $1::date + 60 ORDER BY g.expiry_date`, [today])).rows;
+  return { held, expiring_within_60_days: expiring };
+}
+
 /** Gated write on an active project: if its approvals are no longer valid, hold it and refuse. */
 async function requireValidActive(c: Client, wsId: string, actor: string, project: { id: string; stage: string; protocol_version: number }, requestId: string) {
   if (project.stage !== "active") return;
@@ -258,17 +274,8 @@ export function registerOfficeRoutes({ r, scoped }: RouteDeps) {
   }));
 
   // Expiry sweep (run by the scheduler daily, or by the office on demand).
-  r.on("POST", `${W}/governance/expiry-check`, (ctx) => scoped(ctx, OFFICE, async (c, me, wsId) => {
-    const active = (await c.query("SELECT id, stage, protocol_version FROM project WHERE stage = 'active'")).rows;
-    const held: { id: string; problems: string[] }[] = [];
-    for (const p of active) {
-      const problems = await gateProblems(c, p.id, p.protocol_version, todayIso());
-      if (problems.length) { await holdProject(c, wsId, actorId(me), p, problems.join("; "), ctx.requestId); held.push({ id: p.id, problems }); }
-    }
-    const expiring = (await c.query(`SELECT g.project_id, p.title, g.kind, g.expiry_date FROM governance_decision g JOIN project p ON p.id = g.project_id
-      WHERE NOT g.superseded AND g.expiry_date BETWEEN current_date AND current_date + 60 ORDER BY g.expiry_date`)).rows;
-    return { body: { held, expiring_within_60_days: expiring } };
-  }));
+  r.on("POST", `${W}/governance/expiry-check`, (ctx) => scoped(ctx, OFFICE, async (c, me, wsId) =>
+    ({ body: await expirySweep(c, wsId, actorId(me), todayIso(), ctx.requestId) })));
 
   // ---- Milestones and outputs -------------------------------------------------------------
   r.on("POST", `${W}/projects/{id}/milestones`, (ctx) => scoped(ctx, ["investigator", ...OFFICE], async (c, me, wsId, access) => {

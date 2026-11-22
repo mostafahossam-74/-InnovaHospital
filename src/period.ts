@@ -86,3 +86,10 @@ export function duePeriod(now: Date, s: ScheduleSettings): Period & { scheduledA
   if (pMonth === 0) { pMonth = 12; pYear -= 1; }
   return { ...monthWindow(pYear, pMonth), scheduledAt };
 }
+
+/** The local calendar date (YYYY-MM-DD) of `now` in an IANA zone, and the UTC instant of its midnight. */
+export function localDate(now: Date, timeZone: string): { date: string; midnight: Date } {
+  const p = localParts(now, timeZone);
+  const date = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
+  return { date, midnight: zonedTimeToUtc(p.year, p.month, p.day, 0, timeZone) };
+}

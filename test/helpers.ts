@@ -65,5 +65,5 @@ export async function harness(dbName: string, opts: { drafter?: IdeaDrafter | nu
   }
   const actor = (sub: string) => `${ISSUER}|${sub}`;
   const close = async () => { server.close(); await pool.end(); };
-  return { api, provision, actor, close, ownerSql: db.ownerSql };
+  return { api, provision, actor, close, ownerSql: db.ownerSql, pool };
 }

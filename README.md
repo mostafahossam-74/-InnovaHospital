@@ -47,7 +47,7 @@ Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set befor
 Tests (each test file creates its own database; GitHub Actions runs them, the type checks and the web build on every pull request and push to `main`, see `.github/workflows/test.yml`):
 
 ```bash
-npm test          # 44 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
+npm test          # 50 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
 npm run typecheck && (cd web && npx tsc -b)
 ```
 
@@ -115,6 +115,15 @@ A grant can apply to all departments or to one department, with an optional end 
 | `docs/STATUS.md` | Status against the handoff's build order, open items |
 | `reference/`, `contracts/`, `docs/Developer_Handoff.md` | The InnovaStat developer package, unchanged |
 
+## Scheduler
+
+`npm run start:worker` runs the scheduler next to the API, with the same `DATABASE_URL`. Every minute it:
+
+- drafts each active hospital's report for the month just closed, at the hospital's `report_day` and `report_hour` in its own timezone (default the 1st at 09:00). If someone already drafted that month, it skips it. The draft's author is `service:scheduler`; review and release stay with people, as for any draft;
+- runs the governance expiry sweep once per local day, putting active projects whose approvals have lapsed on hold.
+
+Jobs are kept in `scheduled_job`, one per hospital, kind and month or day, so each runs once even with several workers. A job and its effects commit in one transaction. A failing job is rolled back and retried after 5, 10, 20 and 40 minutes; after the fifth failure it is marked `failed` and recorded in the audit log, and a person handles that month (for example with "Draft report").
+
 ## Database migrations
 
 `npm run db:migrate` applies the files in `db/migrations/` that a database has not had yet, in order, each in its own transaction, and records them in `schema_migration`. Run it on every deploy, before the API starts, with the owner's connection:
@@ -143,5 +152,6 @@ MIGRATION_DATABASE_URL='postgres://owner:…@host:5432/innovahospital' npm run d
 | `DEID_KEY` | Secret for patient-ID pseudonyms (32+ random bytes). Required in production |
 | `SYNTHETIC_DATA=true` | Watermarks PDFs as synthetic |
 | `CORS_ORIGINS`, `WEB_DIST_DIR`, `PORT` | Hosting |
+| `SCHEDULER_INTERVAL_SECONDS` | How often the scheduler worker checks for due jobs (default 60) |
 
 The agent never receives patient rows, only column profiles, summaries and result tables. Even so, enable it for a hospital only after the hospital approves the provider and the processing location.
