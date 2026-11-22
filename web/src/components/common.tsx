@@ -40,7 +40,7 @@ const TONE: Record<string, string> = {
   governance: "info", active: "good", on_hold: "warn", complete: "good", archived: "neutral",
   approved: "good", denied: "bad", determination: "good", revoked: "bad",
   planned: "neutral", in_progress: "info", blocked: "bad", done: "good", cancelled: "neutral", qc: "info", published: "good", released: "good",
-  superseded: "neutral", missing: "bad", unverified: "warn", not_applicable: "neutral", suppressed: "neutral",
+  superseded: "neutral", missing: "bad", unverified: "warn", not_applicable: "neutral", suppressed: "neutral", incomplete: "warn",
   dominant: "good", dominated: "bad", more_costly_more_effective: "info", less_costly_less_effective: "warn",
   locked: "good", pending_review: "info", significant: "good", not_significant: "warn", hospital_approved: "good", hospital_returned: "warn", hospital_accepted: "good", sent: "info", uploaded: "neutral", dictionary: "info", cleaning: "info", hypotheses: "info", analysis: "info", received: "info",
   lead: "neutral", qualified: "info", proposal: "info", contracting: "info", signed: "good", closed: "neutral", lost: "bad",

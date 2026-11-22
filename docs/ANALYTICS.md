@@ -44,9 +44,9 @@ With `INNOVA_ANTHROPIC_API_KEY` set, "Draft with Claude" sends one confirmed gap
 
 ## Disclosure control in reports
 
-The monthly report suppresses an indicator when its numerator or its complement is below the workspace threshold (default 5, set by hospital policy). It suppresses a condition's case count when it is below the threshold, and its mortality when deaths or survivors are below it. Missing, unverified, returned, not applicable (zero eligible cases) and suppressed are kept distinct. Target tests use exact integer arithmetic.
+The monthly report suppresses a department's indicator when its numerator or its complement is below the workspace threshold (default 5, set by hospital policy). Missing, unverified, returned, not applicable (zero eligible cases) and suppressed are kept distinct. Target tests use exact integer arithmetic.
 
-Differencing between department and executive views, and between periods, still needs review before multi-site or department-level releases (Handoff §5 step 4).
+The report also gives a hospital-wide rate per indicator, pooled over the reporting departments under the same definition version (`src/reports/disclosure.ts`). It is withheld while any department is missing, unverified or returned (`incomplete`), and suppressed when the total's numerator or complement is below the threshold, or when subtracting the shown departments would leave a remainder whose events or non-events are below it (`differencing`): with one suppressed department the total is always withheld. Approval and release re-check the stored snapshot independently and refuse with `disclosure_risk` if any shown figure, or any shown total minus the shown departments, is below the threshold. Monthly figures are not cumulative, so comparing periods does not reveal a suppressed cell; a multi-site view or year-to-date totals would need the same check.
 
 ## Limitations to state in every output
 

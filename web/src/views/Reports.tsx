@@ -52,6 +52,12 @@ export function Reports({ reportId }: { reportId: string | null }) {
             <table className="ie-table compact"><thead><tr><th>Department</th><th>Indicator</th><th>Status</th><th className="ih-num">Value</th><th className="ih-num">Target</th></tr></thead>
               <tbody>{s.indicators.map((i: any, n: number) => <tr key={n}><td>{i.department}</td><td>{i.name}</td><td><Status value={i.status} /></td><td className="ih-num">{i.percent ?? "—"}{i.percent !== undefined ? "%" : ""}</td>
                 <td className="ih-num">{i.target_percent !== undefined ? `${i.target_percent}% ${i.meets_target ? "✓ met" : "✗ not met"}` : "—"}</td></tr>)}</tbody></table>
+            {s.indicator_totals?.length > 0 && <>
+              <h3 className="ie-h3">Hospital-wide</h3>
+              <table className="ie-table compact"><thead><tr><th>Indicator</th><th>Status</th><th className="ih-num">Value</th><th className="ih-num">Target</th></tr></thead>
+                <tbody>{s.indicator_totals.map((i: any) => <tr key={`${i.code}-${i.definition_version}`}><td>{i.name}</td><td><Status value={i.status} /></td><td className="ih-num">{i.percent ?? "—"}{i.percent !== undefined ? "%" : ""}</td>
+                  <td className="ih-num">{i.target_percent !== undefined ? `${i.target_percent}% ${i.meets_target ? "✓ met" : "✗ not met"}` : "—"}</td></tr>)}</tbody></table>
+            </>}
             <h3 className="ie-h3">Next 30-day actions</h3>
             {!s.actions.length ? <Empty>None.</Empty> : <table className="ie-table compact"><tbody>{s.actions.map((a: any, n: number) => <tr key={n}><td>{a.action}</td><td className="small">{a.owner}</td><td className="small">{a.due_date}</td></tr>)}</tbody></table>}
             <details className="ie-details"><summary>Portfolio, milestones, outputs, training, risks</summary><pre className="mono" style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify({ funnel: s.funnel, portfolio: s.portfolio, milestones: s.milestones, outputs: s.outputs, training: s.training, partnerships: s.partnerships, risks: s.risks }, null, 2)}</pre></details>

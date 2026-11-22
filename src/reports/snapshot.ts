@@ -4,6 +4,8 @@
 // a fresh build against the stored one.
 import type { Client } from "../db.ts";
 import { gateProblems } from "../api-office.ts";
+import { pooledIndicator } from "./disclosure.ts";
+import type { DepartmentCell } from "./disclosure.ts";
 
 const monthEnd = (period: string) => {
   const [y, m] = period.split("-").map(Number);
@@ -57,28 +59,36 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
   const defs = (await c.query("SELECT id, code, name, def_version, target_bp, direction FROM indicator_definition WHERE active ORDER BY code")).rows;
   const obs = (await c.query("SELECT definition_id, department_id, numerator, denominator, status, input_version FROM indicator_observation WHERE period = $1", [period])).rows;
   const indicators = [];
-  for (const d of defs) for (const dep of depts) {
-    const o = obs.find((x) => x.definition_id === d.id && x.department_id === dep.id);
-    const item: Record<string, unknown> = { department: dep.name, code: d.code, name: d.name, definition_version: d.def_version };
-    let status: IndicatorStatus;
-    if (!o) status = "missing";
-    else if (o.status === "returned") status = "returned";
-    else if (o.status !== "verified") status = "unverified";
-    else if (o.denominator === 0) status = "not_applicable"; // zero eligible cases differs from missing data
-    else if (o.numerator < small || o.denominator - o.numerator < small) status = "suppressed"; // numerator and complement
-    else status = "verified";
-    item.status = status;
-    if (o) item.input_version = o.input_version;
-    if (status === "verified") {
-      const pct = (100 * o.numerator) / o.denominator;
-      item.numerator = o.numerator; item.denominator = o.denominator; item.percent = r2(pct);
-      if (d.target_bp !== null) {
-        item.target_percent = d.target_bp / 100;
-        // Exact integer comparison, no rounding (Handoff §5 step 3).
-        item.meets_target = d.direction === "higher_better" ? o.numerator * 10000 >= o.denominator * d.target_bp : o.numerator * 10000 <= o.denominator * d.target_bp;
+  const indicatorTotals = [];
+  for (const d of defs) {
+    const cells: DepartmentCell[] = [];
+    for (const dep of depts) {
+      const o = obs.find((x) => x.definition_id === d.id && x.department_id === dep.id);
+      const item: Record<string, unknown> = { department: dep.name, code: d.code, name: d.name, definition_version: d.def_version };
+      let status: IndicatorStatus;
+      if (!o) status = "missing";
+      else if (o.status === "returned") status = "returned";
+      else if (o.status !== "verified") status = "unverified";
+      else if (o.denominator === 0) status = "not_applicable"; // zero eligible cases differs from missing data
+      else if (o.numerator < small || o.denominator - o.numerator < small) status = "suppressed"; // numerator and complement
+      else status = "verified";
+      item.status = status;
+      if (o) item.input_version = o.input_version;
+      if (status === "verified") {
+        const pct = (100 * o.numerator) / o.denominator;
+        item.numerator = o.numerator; item.denominator = o.denominator; item.percent = r2(pct);
+        if (d.target_bp !== null) {
+          item.target_percent = d.target_bp / 100;
+          // Exact integer comparison, no rounding (Handoff §5 step 3).
+          item.meets_target = d.direction === "higher_better" ? o.numerator * 10000 >= o.denominator * d.target_bp : o.numerator * 10000 <= o.denominator * d.target_bp;
+        }
       }
+      indicators.push(item);
+      cells.push({ status, numerator: o ? o.numerator : null, denominator: o ? o.denominator : null });
     }
-    indicators.push(item);
+    // Hospital-wide rate over the same definition version, hidden when it or the remainder
+    // after subtracting the shown departments is small (differencing control).
+    indicatorTotals.push({ code: d.code, name: d.name, definition_version: d.def_version, ...pooledIndicator(cells, small, d) });
   }
   const applicable = indicators.filter((i) => i.status !== "not_applicable");
   const completeness = applicable.length ? r2((100 * applicable.filter((i) => ["verified", "suppressed"].includes(i.status as string)).length) / applicable.length) : null;
@@ -138,13 +148,13 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
     portfolio: { by_stage: stages, activated_in_period: activated, by_category: byCategory },
     milestones: { due_in_period: ms.length, completed_on_time: onTime, on_time_rate_percent: ms.length ? r2((100 * onTime) / ms.length) : null, overdue_unresolved: overdue.length },
     outputs, training: { ...training, completion_percent: training.enrolled ? r2((100 * training.completed) / training.enrolled) : null },
-    partnerships, indicators, indicator_completeness_percent: completeness,
+    partnerships, indicators, indicator_totals: indicatorTotals, indicator_completeness_percent: completeness,
     research_intelligence: intelligence,
     risks: { on_hold: onHold.map((p) => ({ project: p.title, reason: p.hold_reason })), approvals_expiring: expiring, approval_problems: gateRisks },
     actions,
     limitations: [
       "Aggregate data only: no patient-level records are held. Associations from hospital data are unadjusted and do not show causation.",
-      `Cells with fewer than ${small} events or non-events are suppressed.`,
+      `Cells with fewer than ${small} events or non-events are suppressed. A hospital-wide total is also suppressed when subtracting the shown departments would reveal such a cell.`,
       "Missing, unverified, not-applicable and suppressed values are excluded from target comparisons.",
     ],
   };

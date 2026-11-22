@@ -11,6 +11,7 @@ import type { RouteDeps } from "./api-common.ts";
 import { buildSnapshot } from "./reports/snapshot.ts";
 import { renderPdf } from "./reports/pdf.ts";
 import { membersWithRoles, notify } from "./notifications.ts";
+import { disclosureProblems } from "./reports/disclosure.ts";
 import type { ObjectStore } from "./storage.ts";
 
 export type ReportDeps = { store: ObjectStore; synthetic?: boolean };
@@ -29,6 +30,12 @@ export async function draftReport(c: Client, wsId: string, period: string, actor
   await notify(c, wsId, { kind: "report_review_needed", recipients: reviewers.length ? reviewers : await membersWithRoles(c, ["research_director"]),
     exclude: [actor], entityType: "report_revision", entityId: id, linkPath: `/#/w/${wsId}/reports/${id}`, params: { period }, dedupe: `report_review_needed:${id}` });
   return { id, period, revision, digest };
+}
+
+/** Refuses to approve or release a snapshot that would disclose a small count (independent re-check). */
+function requireSafeDisclosure(snapshot: Parameters<typeof disclosureProblems>[0]) {
+  const problems = disclosureProblems(snapshot);
+  if (problems.length) throw new ApiError(409, "disclosure_risk", "The report would disclose a count below the hospital's threshold. Draft a new revision.", problems);
 }
 
 export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps) {
@@ -62,6 +69,7 @@ export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps)
     if (rep.status !== "draft") throw new ApiError(409, "invalid_state", `The report is ${rep.status}`);
     if (rep.digest !== b.digest) throw new ApiError(409, "stale_digest", "You reviewed a different version of this report");
     if (rep.author === actorId(me)) throw forbidden("The author cannot review their own report");
+    if (b.decision === "approve") requireSafeDisclosure(rep.snapshot);
     if (b.decision === "approve" && sha256(canonicalJson(await buildSnapshot(c, wsId, rep.period))) !== rep.digest) {
       throw new ApiError(409, "inputs_changed", "Report inputs changed after drafting. Draft a new revision.");
     }
@@ -90,6 +98,7 @@ export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps)
       if (rep.status !== "approved") throw new ApiError(409, "invalid_state", "Only an approved report can be published");
       if (rep.digest !== b.digest) throw new ApiError(409, "stale_digest", "You are releasing a different version of this report");
       if ([rep.author, rep.reviewer].includes(actorId(me))) throw forbidden("Release needs someone other than the author and the reviewer");
+      requireSafeDisclosure(rep.snapshot);
       if (sha256(canonicalJson(await buildSnapshot(c, wsId, rep.period))) !== rep.digest) throw new ApiError(409, "inputs_changed", "Report inputs changed after approval. Draft a new revision.");
       const newer = (await c.query("SELECT max(revision) AS v FROM report_revision WHERE period = $1 AND status IN ('published','superseded')", [rep.period])).rows[0].v;
       if (newer !== null && newer >= rep.revision) throw new ApiError(409, "newer_release", "A newer revision was already released");

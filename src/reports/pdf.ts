@@ -57,6 +57,12 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
     s.indicators.map((i: any) => [i.department, `${i.name} (v${i.definition_version})`, i.status.replace("_", " "),
       i.percent !== undefined ? `${i.percent}%` : "—", i.target_percent !== undefined ? `${i.target_percent}%` : "—",
       i.meets_target === undefined ? "—" : i.meets_target ? "Yes" : "No"]), [2.2, 3.2, 1.4, 1, 1, 0.8]);
+  if ((s.indicator_totals ?? []).length) {
+    table(["Hospital-wide", "Status", "Value", "Target", "Met"],
+      (s.indicator_totals as any[]).map((i) => [`${i.name} (v${i.definition_version})`, i.status.replace("_", " "),
+        i.percent !== undefined ? `${i.percent}%` : "—", i.target_percent !== undefined ? `${i.target_percent}%` : "—",
+        i.meets_target === undefined ? "—" : i.meets_target ? "Yes" : "No"]), [5.4, 1.4, 1, 1, 0.8]);
+  }
   p(`Indicator completeness: ${s.indicator_completeness_percent ?? "—"}%.`);
 
   const ri = s.research_intelligence as any;
