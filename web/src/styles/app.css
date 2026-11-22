@@ -1,0 +1,134 @@
+/* InnovaHospital application styles, layered on the prototype's design tokens (globals.css). */
+.ie-stack{display:flex;flex-direction:column;gap:16px}
+.ie-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.ie-split{display:grid;grid-template-columns:minmax(280px,2fr) minmax(0,3fr);gap:16px;align-items:start}
+@media (max-width:1000px){.ie-grid-2,.ie-split{grid-template-columns:1fr}}
+.ie-panel .panel-head h2{font-size:15px;font-weight:700;margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ie-panel-body{padding:0 17px 16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.ie-actions{display:flex;gap:8px;flex-wrap:wrap}
+.ie-inline{display:flex;gap:8px;align-items:center}
+.ie-inline.wrap{flex-wrap:wrap}
+.muted{color:var(--muted-foreground)}
+.small{font-size:12px}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all}
+.ie-h3,.ie-form h3{font-size:13px;font-weight:700;margin:6px 0 2px}
+.ie-prose{white-space:pre-wrap;line-height:1.55;margin:0}
+
+.ie-table{width:100%;border-collapse:collapse;font-size:13px}
+.ie-table th{text-align:left;font-weight:600;color:var(--muted-foreground);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:8px 8px;border-bottom:1px solid var(--line)}
+.ie-table td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.ie-table.compact td{padding:6px 8px}
+.ie-table tr.clickable{cursor:pointer}.ie-table tr.clickable:hover td{background:#f7fafc}
+.ie-panel-body{overflow-x:auto}
+
+.ie-status{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;text-transform:capitalize;white-space:nowrap;background:#eef1f5;color:#435064}
+.ie-status.good{background:var(--teal-soft);color:#076a61}
+.ie-status.info{background:var(--blue-soft);color:#2a5bb0}
+.ie-status.warn{background:var(--amber-soft);color:#8a5410}
+.ie-status.bad{background:#fdecee;color:#a8283a}
+
+.ie-notice{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.45;border:1px solid}
+.ie-notice svg{flex:none;margin-top:2px}
+.ie-notice ul{margin:4px 0 0 16px}
+.ie-notice.info{background:var(--blue-soft);border-color:#cfdcf7;color:#23467f}
+.ie-notice.success{background:var(--teal-soft);border-color:#bfe7e0;color:#075e58}
+.ie-notice.warning{background:var(--amber-soft);border-color:#f3dcae;color:#7a4a0c}
+.ie-notice.error{background:#fdecee;border-color:#f6c7cd;color:#8f1f30}
+.ie-loading{display:flex;gap:8px;align-items:center;color:var(--muted-foreground);font-size:13px;padding:12px 0}
+.ie-empty{color:var(--muted-foreground);font-size:13px;padding:14px;border:1px dashed var(--line);border-radius:8px;text-align:center}
+
+.ie-form{display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--line);border-radius:9px;background:#fbfcfd;align-items:flex-start}
+.ie-form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px 12px;width:100%}
+.ie-field{display:flex;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.ie-field>span{font-weight:600;color:#34425a}
+.ie-field small{color:var(--muted-foreground)}
+.ie-field.wide{grid-column:1/-1}
+.ie-input{width:100%;border:1px solid var(--input);border-radius:7px;padding:7px 9px;font:inherit;font-size:13px;background:#fff;color:var(--ink);min-width:0}
+.ie-input:focus{outline:2px solid #0b8f8340;border-color:var(--ring)}
+.ie-input.sm{padding:4px 7px;font-size:12px;width:auto;min-width:120px}
+.ie-input:disabled{background:#f2f4f7;color:var(--muted-foreground)}
+textarea.ie-input{resize:vertical}
+.ie-checks{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;align-items:center}
+.ie-checks.col{flex-direction:column;align-items:flex-start;max-height:220px;overflow:auto}
+.ie-checks label{display:flex;gap:6px;align-items:center}
+.ie-sep{width:1px;height:18px;background:var(--line)}
+.ie-details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+.ie-details summary{cursor:pointer;font-weight:600;font-size:13px;display:flex;gap:6px;align-items:center}
+.ie-details[open]>summary{margin-bottom:8px}
+.ie-details ul{margin:0;padding-left:18px;font-size:12px;line-height:1.6}
+
+.ie-dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 16px;margin:0}
+.ie-dl dt{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground)}
+.ie-dl dd{margin:2px 0 0;font-size:13px}
+
+.ie-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ie-list>li>button{width:100%;text-align:left;border:1px solid var(--line);border-radius:8px;padding:9px 11px;background:#fff;cursor:pointer;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.ie-list>li>button:hover{border-color:#b9c3cf}
+.ie-list>li>button.selected{border-color:var(--teal);box-shadow:0 0 0 2px #0b8f8320}
+.ie-row-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:11px;color:var(--muted-foreground)}
+.ie-subpanel{padding:10px 4px 4px;display:flex;flex-direction:column;gap:8px}
+.ie-finding{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.ie-finding p{margin:0}
+.ie-finding.retracted{opacity:.6}
+.ie-finding blockquote,.ie-sources blockquote{margin:0;padding:6px 10px;border-left:3px solid var(--teal);background:#f6faf9;font-size:12px}
+.ie-tags{display:inline-flex;flex-wrap:wrap;gap:4px}
+.ie-link{color:#0a7a70;text-decoration:none;display:inline-flex;align-items:center;gap:3px}
+.ie-link:hover{text-decoration:underline}
+.ie-linkbtn{background:none;border:0;color:#2a5bb0;cursor:pointer;font-size:12px;padding:0 6px}
+.ie-concepts{display:flex;flex-direction:column;gap:6px;font-size:13px}
+
+.ie-checklist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.ie-checklist li{display:flex;flex-direction:column;gap:2px;padding:8px 10px 8px 30px;border-radius:8px;position:relative;font-size:12px;background:#fbfcfd;border:1px solid var(--line)}
+.ie-checklist li b{text-transform:capitalize;font-size:13px}
+.ie-checklist li span{color:var(--muted-foreground)}
+.ie-checklist li::before{position:absolute;left:10px;top:9px;font-weight:700}
+.ie-checklist li.ok::before{content:"✓";color:var(--teal)}
+.ie-checklist li.required::before{content:"!";color:var(--rose)}
+.ie-checklist li.advisory::before{content:"•";color:var(--amber)}
+
+.ie-ack{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fbfcfd;font-size:13px}
+.ie-workflow{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.ie-ask{display:flex;gap:8px;align-items:center}
+.ie-ask>svg{color:var(--muted-foreground);flex:none}
+.ie-answer{margin:0;padding-left:18px;line-height:1.6;font-size:14px}
+.ie-answer sup{color:#0a7a70;font-weight:700;margin-left:2px}
+.ie-sources{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.ie-sources li{display:flex;flex-direction:column;gap:4px}
+
+.ie-signin{min-height:100vh;display:grid;place-items:center;background:var(--nav);padding:16px}
+.ie-signin-card{background:#fff;border-radius:14px;padding:28px;width:min(400px,100%);display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 50px #0007}
+.ie-signin-card h1{margin:4px 0 0;font-size:22px}
+.ie-signin-card p{margin:0;color:var(--muted-foreground);font-size:13px}
+
+/* Overrides of prototype rules */
+/* The prototype colours the subtitle with --muted, which shadcn redefines as a background tone (#f0f2f5). */
+.top-title p{color:var(--muted-foreground);font-size:12px}
+.company-select{width:auto!important;min-width:220px;max-width:420px}
+/* A fixed note covered table content; keep it in the page flow instead. */
+.production-note{position:static;margin:0 30px 24px auto;width:fit-content;font-size:10px}
+.ie-panel-body{font-size:13.5px;line-height:1.5}
+.ie-prose{font-size:14px}
+.ie-sources li{align-items:flex-start}
+@media (max-width:768px){.production-note{margin:0 15px 20px}}
+.ie-screening-bar{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;font-size:12.5px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:#fff}
+.ie-agent{border:1px solid #cfe6e2;background:#f6fbfa;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:5px;font-size:13px}
+.ie-agent p{margin:0}
+.ie-agent blockquote{margin:0;padding:6px 10px;border-left:3px solid var(--teal);background:#fff;font-size:12px}
+/* Keep the selected record in view while scrolling long candidate lists. */
+@media (min-width:1001px){.ie-split>:last-child{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto}}
+
+/* InnovaHospital additions */
+.ih-bar{display:inline-flex;align-items:center;gap:8px;min-width:160px;width:100%}
+.ih-bar-track{flex:1;height:8px;border-radius:999px;background:#e8eef0;overflow:hidden;min-width:60px}
+.ih-bar-fill{display:block;height:100%;background:var(--teal,#0b8f83);border-radius:999px}
+.ih-bar-text{font-variant-numeric:tabular-nums;font-size:12px;min-width:52px;text-align:right}
+.ih-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.ih-tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:8px}
+.ih-tabs button{border:0;background:none;padding:8px 12px;font:inherit;font-size:13px;color:var(--muted-foreground);border-bottom:2px solid transparent;cursor:pointer}
+.ih-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--teal,#0b8f83);font-weight:600}
+.ih-statement{background:#f6faf9;border-left:3px solid var(--teal,#0b8f83);padding:10px 12px;border-radius:6px;line-height:1.55;font-size:13px;margin:0}
+.ih-num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.ih-score{display:inline-flex;align-items:center;justify-content:center;min-width:42px;padding:2px 8px;border-radius:999px;background:#e6f4f1;color:#075e58;font-weight:700;font-size:12px}
+.ih-roleswitch{font-size:12px}
+[dir=rtl] .ie-table th,[dir=rtl] .ie-table td{text-align:right}
+.ie-panel-body ul{list-style:disc;padding-inline-start:20px;margin:0;display:flex;flex-direction:column;gap:3px;font-size:13px;line-height:1.5}
