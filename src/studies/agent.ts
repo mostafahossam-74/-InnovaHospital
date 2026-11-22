@@ -45,17 +45,28 @@ const SYSTEM: Record<AgentTask, string> = {
   manuscript: "You are a medical writer drafting a manuscript for a peer-reviewed journal from an approved study result (STROBE for observational studies, CHEERS 2022 for economic evaluations). Use only numbers that appear in the input. Mark places needing author input with [AUTHOR INPUT]. Do not invent references; write [REF] where a citation is needed.",
 };
 
-/** Structured output rejects array size limits (maxItems, minItems above 1) and number bounds;
- *  drop them from the schema sent to the API. The zod schema still enforces every limit on the reply. */
-const API_UNSUPPORTED = new Set(["maxItems", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]);
-function forApi(node: unknown): unknown {
+/** Structured output rejects array size limits (maxItems, minItems above 1) and number bounds.
+ *  Drop them from the schema sent to the API but state each one in the field's description, so
+ *  Claude still sees the rule. The zod schema enforces every limit on the reply. */
+const API_UNSUPPORTED: Record<string, (v: unknown) => string> = {
+  maxItems: (v) => `At most ${v} items.`,
+  minimum: (v) => `Must be at least ${v}.`,
+  maximum: (v) => `Must be at most ${v}.`,
+  exclusiveMinimum: (v) => `Must be greater than ${v}.`,
+  exclusiveMaximum: (v) => `Must be less than ${v}.`,
+  multipleOf: (v) => `Must be a multiple of ${v}.`,
+};
+export function forApi(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(forApi);
   if (!node || typeof node !== "object") return node;
   const out: Record<string, unknown> = {};
+  const rules: string[] = [];
   for (const [k, v] of Object.entries(node)) {
-    if (API_UNSUPPORTED.has(k) || (k === "minItems" && typeof v === "number" && v > 1)) continue;
-    out[k] = forApi(v);
+    if (k in API_UNSUPPORTED) rules.push(API_UNSUPPORTED[k](v));
+    else if (k === "minItems" && typeof v === "number" && v > 1) rules.push(`At least ${v} items.`);
+    else out[k] = forApi(v);
   }
+  if (rules.length) out.description = [out.description, ...rules].filter(Boolean).join(" ");
   return out;
 }
 

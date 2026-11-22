@@ -1,7 +1,7 @@
 // The Claude study agent's request schema and number check (no API calls).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { jsonSchema, unsupported, type AgentTask } from "../src/studies/agent.ts";
+import { forApi, jsonSchema, unsupported, type AgentTask } from "../src/studies/agent.ts";
 
 const REJECTED = ["maxItems", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"];
 
@@ -39,4 +39,14 @@ test("list markers are allowed; bracketed numbers in a sentence are not", () => 
   assert.deepEqual(unsupported("Deaths (27) were rare.", src), [27]);
   assert.deepEqual(unsupported("The cost rose. (6)", src), [6]);
   assert.deepEqual(unsupported("9. 47 patients died.", src), [9, 47]); // "9." before a number is not taken as a marker
+});
+
+test("each rule dropped from the API schema is stated in the field's description", () => {
+  assert.deepEqual(forApi({ type: "number", description: "Alpha.", minimum: 0.001, maximum: 0.2 }),
+    { type: "number", description: "Alpha. Must be at least 0.001. Must be at most 0.2." });
+  assert.deepEqual(forApi({ type: "array", maxItems: 10, minItems: 2, items: { type: "number", exclusiveMinimum: 0 } }),
+    { type: "array", items: { type: "number", description: "Must be greater than 0." }, description: "At most 10 items. At least 2 items." });
+  assert.deepEqual(forApi({ type: "array", minItems: 1 }), { type: "array", minItems: 1 }, "minItems 0 or 1 is supported and kept");
+  const thresholds = (jsonSchema("plan") as any).properties.plan.properties.economics.properties.wtp_thresholds;
+  assert.equal(thresholds.items.description, "Must be greater than 0.");
 });
