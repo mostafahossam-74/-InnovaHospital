@@ -67,7 +67,7 @@ export function screen(rows: CleanRow[], vars: Variable[], opts: { currency: str
         const c = compareProportions(ka, a.length, kb, b.length);
         tests.push({ p: c.p_value, effect: Math.abs(c.rd) / 0.1, share, h: { key: `cmp:${s.value ?? "all"}:${ex.name}:${lv}:${ref}:${o.name}`, kind: "comparative", study_category: "clinical_effectiveness",
           title: `${o.label} with ${lv} vs ${ref}${where}`,
-          statement: `In the discovery half of the data${where}, ${o.label.toLowerCase()} was ${pct(c.p1)} (${ka}/${a.length}) with ${lv} versus ${pct(c.p2)} (${kb}/${b.length}) with ${ref} (crude risk difference ${(c.rd * 100).toFixed(1)} points). Hypothesis: after adjustment for baseline differences, ${lv} is associated with a different risk of ${o.label.toLowerCase()} than ${ref}. To be tested on the held-out validation half.`,
+          statement: `In the discovery half of the data${where}, the "${o.label}" rate was ${pct(c.p1)} (${ka}/${a.length}) with ${lv} versus ${pct(c.p2)} (${kb}/${b.length}) with ${ref} (crude risk difference ${(c.rd * 100).toFixed(1)} points). Hypothesis: after adjustment for baseline differences, ${lv} is associated with a different "${o.label}" rate than ${ref}. To be tested on the held-out validation half.`,
           variables: { exposure: ex.name, treated: lv, reference: ref, outcome: o.name, outcome_type: "binary", ...(s.value && diag ? { diagnosis: diag.name, diagnosis_value: s.value } : {}) },
           screening: { split: "discovery", n_treated: a.length, n_reference: b.length, events_treated: ka, events_reference: kb, risk_treated: round(c.p1, 4), risk_reference: round(c.p2, 4), risk_difference: round(c.rd, 4), p_value: round(c.p_value, 6) }, priority: 0 } });
       }
@@ -79,7 +79,7 @@ export function screen(rows: CleanRow[], vars: Variable[], opts: { currency: str
         const unit = isCost ? ` ${opts.currency}` : o.role === "los" ? " days" : "";
         tests.push({ p: w.p_value, effect: Math.abs(w.difference / (mb || 1)) / 0.2, share, h: { key: `cmp:${s.value ?? "all"}:${ex.name}:${lv}:${ref}:${o.name}`, kind: "comparative", study_category: isCost ? "health_economics" : "clinical_effectiveness",
           title: `${o.label} with ${lv} vs ${ref}${where}`,
-          statement: `In the discovery half of the data${where}, mean ${o.label.toLowerCase()} was ${round(w.difference + mb, 2)}${unit} with ${lv} versus ${round(mb, 2)}${unit} with ${ref} (difference ${round(w.difference, 2)}${unit}). Hypothesis: the difference persists after adjustment for baseline differences. To be tested on the held-out validation half.`,
+          statement: `In the discovery half of the data${where}, mean "${o.label}" was ${round(w.difference + mb, 2)}${unit} with ${lv} versus ${round(mb, 2)}${unit} with ${ref} (difference ${round(w.difference, 2)}${unit}). Hypothesis: the difference persists after adjustment for baseline differences. To be tested on the held-out validation half.`,
           variables: { exposure: ex.name, treated: lv, reference: ref, outcome: o.name, outcome_type: "continuous", ...(s.value && diag ? { diagnosis: diag.name, diagnosis_value: s.value } : {}) },
           screening: { split: "discovery", n_treated: a.length, n_reference: b.length, mean_treated: round(w.difference + mb, 2), mean_reference: round(mb, 2), difference: round(w.difference, 2), p_value: round(w.p_value, 6) }, priority: 0 } });
       }
@@ -110,7 +110,7 @@ function economic(exposure: string, treated: string, reference: string, a: Clean
   const dc = ca - cb;
   return { key: `econ:${diagValue ?? "all"}:${exposure}:${treated}:${reference}:${o.name}`, kind: "economic", study_category: "health_economics",
     title: `Cost-effectiveness of ${treated} vs ${reference}${where}`,
-    statement: `In the discovery half${where}, ${treated} cost ${round(ca, 0)} ${currency} per patient versus ${round(cb, 0)} ${currency} with ${reference} (difference ${round(dc, 0)} ${currency}), with ${o.label.toLowerCase()} ${pct(ea)} versus ${pct(eb)}. Hypothesis: the incremental cost of ${treated} per ${o.label.toLowerCase()} event avoided can be estimated with acceptable uncertainty, to inform which option offers value. To be tested on the validation half with bootstrapped uncertainty.`,
+    statement: `In the discovery half${where}, ${treated} cost ${round(ca, 0)} ${currency} per patient versus ${round(cb, 0)} ${currency} with ${reference} (difference ${round(dc, 0)} ${currency}), with "${o.label}" rates of ${pct(ea)} versus ${pct(eb)}. Hypothesis: the incremental cost of ${treated} per "${o.label}" event avoided can be estimated with acceptable uncertainty, to inform which option offers value. To be tested on the validation half with bootstrapped uncertainty.`,
     variables: { exposure, treated, reference, outcome: o.name, outcome_type: "binary", cost: costVar, ...(diagValue && diagName ? { diagnosis: diagName, diagnosis_value: diagValue } : {}) },
     screening: { split: "discovery", n_treated: a.length, n_reference: b.length, mean_cost_treated: round(ca, 2), mean_cost_reference: round(cb, 2), event_rate_treated: round(ea, 4), event_rate_reference: round(eb, 4) },
     priority: Math.round(1000 * (0.4 * Math.min(1, share / 0.25) + 0.6 * Math.min(1, Math.abs(dc / cb) / 0.3))) / 10 };
@@ -153,7 +153,7 @@ const fmt = (x: number) => (Math.abs(x) >= 100 ? Math.round(x).toLocaleString("e
 /** Deterministic interpretation of a result; the default and the fallback for the agent. */
 export function templateInterpretation(plan: Plan, r: StudyResult, vars: Variable[] = []): string {
   const p = r.primary, pop = r.population;
-  const outcomeLabel = (vars.find((v) => v.name === plan.outcome.variable)?.label ?? plan.outcome.variable.replaceAll("_", " ")).toLowerCase();
+  const outcomeLabel = `"${vars.find((v) => v.name === plan.outcome.variable)?.label ?? plan.outcome.variable.replaceAll("_", " ")}"`;
   const measure = MEASURE[p.measure] ?? p.measure.replaceAll("_", " ");
   const lines = [
     `In the held-out ${r.split === "validation" ? "validation" : "full"} data (${pop.included} patients: ${pop.treated} ${pop.treated_label}, ${pop.reference} ${pop.reference_label}), the ${measure} for ${outcomeLabel} with ${pop.treated_label} versus ${pop.reference_label} was ${p.estimate} (95% CI ${p.low} to ${p.high}; p ${p.p_value < 0.001 ? "< 0.001" : `= ${p.p_value.toFixed(3)}`}).`,

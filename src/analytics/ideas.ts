@@ -32,7 +32,7 @@ const DATA = "Hospital information system and medical records for the cohort, ex
 
 export function templateIdea(g: GapForIdea): IdeaDraft {
   const m = g.metrics;
-  const cond = g.condition_label ? `${g.condition_label} (${g.condition_code})` : "";
+  const cond = g.condition_label ? (g.condition_code && g.condition_code !== g.condition_label ? `${g.condition_label} (${g.condition_code})` : g.condition_label) : "";
   switch (g.gap_type) {
     case "management_outcome_variation":
       return {

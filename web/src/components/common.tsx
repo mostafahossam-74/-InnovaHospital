@@ -42,6 +42,7 @@ const TONE: Record<string, string> = {
   planned: "neutral", in_progress: "info", blocked: "bad", done: "good", cancelled: "neutral", qc: "info", published: "good", released: "good",
   superseded: "neutral", missing: "bad", unverified: "warn", not_applicable: "neutral", suppressed: "neutral",
   dominant: "good", dominated: "bad", more_costly_more_effective: "info", less_costly_less_effective: "warn",
+  locked: "good", pending_review: "info", significant: "good", not_significant: "warn", hospital_approved: "good", hospital_returned: "warn", hospital_accepted: "good", sent: "info", uploaded: "neutral", dictionary: "info", cleaning: "info", hypotheses: "info", analysis: "info", received: "info",
   lead: "neutral", qualified: "info", proposal: "info", contracting: "info", signed: "good", closed: "neutral", lost: "bad",
 };
 export function Status({ value }: { value: string | null | undefined }) {
@@ -77,3 +78,6 @@ export function Bar({ value, max = 1, text }: { value: number; max?: number; tex
   const w = Math.max(0, Math.min(100, (100 * value) / (max || 1)));
   return <span className="ih-bar"><span className="ih-bar-track"><span className="ih-bar-fill" style={{ width: `${w}%` }} /></span><span className="ih-bar-text">{text ?? pct(value)}</span></span>;
 }
+
+const MEASURE: Record<string, string> = { adjusted_odds_ratio: "adjusted odds ratio", odds_ratio_iptw: "propensity-weighted odds ratio", adjusted_mean_difference: "adjusted mean difference", ratio_of_geometric_means: "ratio of geometric means", adjusted_hazard_ratio: "adjusted hazard ratio" };
+export const measure = (m: string) => MEASURE[m] ?? label(m);

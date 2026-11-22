@@ -20,6 +20,7 @@ export type Api = {
   patch<T = any>(path: string, body: unknown): Promise<T>;
   put<T = any>(path: string, body: unknown): Promise<T>;
   blob(path: string): Promise<Blob>;
+  upload<T = any>(path: string, file: File): Promise<T>;
 };
 
 export function createApi(getToken: () => Promise<string | null>, onUnauthorized: () => void): Api {
@@ -27,8 +28,9 @@ export function createApi(getToken: () => Promise<string | null>, onUnauthorized
     const token = await getToken();
     const h: Record<string, string> = { ...headers };
     if (token) h.authorization = `Bearer ${token}`;
-    if (body !== undefined) h["content-type"] = "application/json";
-    const res = await fetch(config.apiBase + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    const isFile = body instanceof Blob;
+    if (body !== undefined && !isFile) h["content-type"] = "application/json";
+    const res = await fetch(config.apiBase + path, { method, headers: h, body: body === undefined ? undefined : isFile ? body : JSON.stringify(body) });
     if (res.ok) return res;
     let err: { code?: string; message?: string; details?: unknown } = {};
     try { err = (await res.json()).error ?? {}; } catch { /* non-JSON error */ }
@@ -42,6 +44,7 @@ export function createApi(getToken: () => Promise<string | null>, onUnauthorized
     patch: (path, body) => request("PATCH", path, body).then(json),
     put: (path, body) => request("PUT", path, body).then(json),
     blob: (path) => request("GET", path).then((r) => r.blob()),
+    upload: (path, file) => request("POST", path, file, { "content-type": file.type || (file.name.endsWith(".csv") ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") }).then(json),
   };
 }
 

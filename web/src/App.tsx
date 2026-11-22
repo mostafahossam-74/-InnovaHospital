@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Activity, BarChart3, Building2, Database, FileText, FlaskConical, GraduationCap, Languages, LayoutDashboard,
-  Lightbulb, LockKeyhole, LogOut, ShieldCheck, Target, Users, Wrench,
+  Lightbulb, LockKeyhole, LogOut, Microscope, Send, ShieldCheck, Target, Users, Wrench, Inbox,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
@@ -26,23 +26,31 @@ import { Reports } from "@/views/Reports";
 import { Office } from "@/views/Office";
 import { WorkspaceSettings } from "@/views/WorkspaceSettings";
 import { Platform } from "@/views/Platform";
+import { Workbench } from "@/views/Workbench";
+import { Deliverables } from "@/views/Deliverables";
+import { HospitalResearch } from "@/views/HospitalResearch";
 
-const DEMO_USERS = ["coordinator", "reviewer", "director", "steward", "pi", "governance", "admin", "exec", "platform-admin"];
-const STAFF: Role[] = ["hospital_admin", "research_director", "department_lead", "investigator", "coordinator", "governance_recorder", "data_steward", "innovastat_reviewer"];
+const DEMO_USERS = ["analyst", "statistician", "statistician2", "director", "coordinator", "steward", "pi", "governance", "admin", "exec", "platform-admin"];
+const STAFF: Role[] = ["hospital_admin", "research_director", "department_lead", "investigator", "coordinator", "governance_recorder", "data_steward", "innovastat_reviewer", "innovastat_analyst"];
+const INTERNAL: Role[] = ["innovastat_analyst", "innovastat_reviewer"];
 
 type NavItem = { id: string; label: string; ar: string; icon: any; title: string; subtitle: string; show: (c: Ctx) => boolean };
 const NAV: NavItem[] = [
-  { id: "dashboard", label: "Overview", ar: "نظرة عامة", icon: LayoutDashboard, title: "Overview", subtitle: "Research output, hospital-data signals and what needs attention.", show: () => true },
-  { id: "data", label: "Hospital data", ar: "بيانات المستشفى", icon: Database, title: "Hospital data", subtitle: "Aggregate case, outcome, cost and parameter uploads, verified by a second person.", show: (c) => c.staff },
-  { id: "analysis", label: "Outcomes analytics", ar: "تحليلات النتائج", icon: BarChart3, title: "Outcomes analytics", subtitle: "Disease burden, management and outcomes, health economics and hospital parameters.", show: (c) => c.staff },
-  { id: "gaps", label: "Research gaps", ar: "الفجوات البحثية", icon: Target, title: "Research gaps", subtitle: "Statistical signals from hospital data, confirmed by a reviewer, turned into study ideas.", show: (c) => c.staff },
-  { id: "ideas", label: "Ideas & intake", ar: "الأفكار البحثية", icon: Lightbulb, title: "Research ideas", subtitle: "Proposals from clinicians and from research gaps: triage, feasibility and conversion.", show: (c) => c.staff },
-  { id: "projects", label: "Projects", ar: "المشاريع", icon: FlaskConical, title: "Project portfolio", subtitle: "Studies from submission to publication, gated by ethics and data approvals.", show: (c) => c.staff },
+  { id: "dashboard", label: "Overview", ar: "نظرة عامة", icon: LayoutDashboard, title: "Overview", subtitle: "Research output and what needs attention.", show: () => true },
+  { id: "workbench", label: "Study workbench", ar: "منصة التحليل", icon: Microscope, title: "Study workbench (InnovaStat)", subtitle: "Patient-level data: dictionary, cleaning, hypotheses, locked plans and validated results, each confirmed by a statistician.", show: (c) => c.internal },
+  { id: "deliverables", label: "Ideas, reports & manuscripts", ar: "التقارير", icon: Send, title: "Deliverables (InnovaStat)", subtitle: "Research ideas, Gaps & Ideas reports, results reports and manuscripts for the hospital.", show: (c) => c.internal },
+  { id: "analysis", label: "Aggregate analytics", ar: "تحليلات النتائج", icon: BarChart3, title: "Aggregate outcomes analytics (InnovaStat)", subtitle: "Monthly totals: disease burden, management and outcomes, health economics, hospital parameters.", show: (c) => c.internal },
+  { id: "gaps", label: "Aggregate gaps", ar: "الفجوات البحثية", icon: Target, title: "Research gaps from aggregate data (InnovaStat)", subtitle: "Signals from monthly totals, confirmed by a statistician.", show: (c) => c.internal },
+  { id: "research", label: "Research with InnovaStat", ar: "البحث مع InnovaStat", icon: Inbox, title: "Research with InnovaStat", subtitle: "Send study data, read InnovaStat's reports, approve suggested studies and results, receive manuscripts.", show: (c) => !c.internal },
+  { id: "data", label: "Monthly totals", ar: "بيانات المستشفى", icon: Database, title: "Monthly aggregate data", subtitle: "Monthly totals of cases, outcomes, costs and hospital parameters.", show: (c) => c.internal || c.has("data_steward", "coordinator") },
+  { id: "ideas", label: "Ideas & intake", ar: "الأفكار البحثية", icon: Lightbulb, title: "Research ideas", subtitle: "Proposals from clinicians: triage, feasibility and conversion.", show: (c) => c.staff },
+  { id: "projects", label: "Studies", ar: "المشاريع", icon: FlaskConical, title: "Ongoing studies", subtitle: "Studies from approval to publication, gated by ethics and data approvals.", show: (c) => c.staff },
   { id: "indicators", label: "Quality indicators", ar: "مؤشرات الجودة", icon: Activity, title: "Quality indicators", subtitle: "Versioned definitions, monthly values and independent verification.", show: (c) => c.staff },
   { id: "office", label: "Training & partners", ar: "التدريب والشراكات", icon: GraduationCap, title: "Training, outputs and partnerships", subtitle: "Research capacity, publications and the funding pipeline.", show: (c) => c.staff },
-  { id: "reports", label: "Monthly reports", ar: "التقارير الشهرية", icon: FileText, title: "Monthly executive reports", subtitle: "Drafted by the coordinator, reviewed by InnovaStat, released by the research director.", show: () => true },
+  { id: "reports", label: "Monthly reports", ar: "التقارير الشهرية", icon: FileText, title: "Monthly executive reports", subtitle: "Drafted by the coordinator, reviewed, released by the research director.", show: () => true },
   { id: "settings", label: "Settings & access", ar: "الإعدادات", icon: Wrench, title: "Settings and access", subtitle: "Departments, role grants and reporting policy.", show: (c) => c.has("hospital_admin") },
 ];
+
 
 function parseHash(): { ws: string | null; view: string; param: string | null } {
   const parts = window.location.hash.replace(/^#\/?/, "").split("/");
@@ -54,7 +62,7 @@ function parseHash(): { ws: string | null; view: string; param: string | null } 
 
 function SignIn() {
   const { signIn, signInWithPassword, error } = useAuth();
-  const [subject, setSubject] = useState("coordinator");
+  const [subject, setSubject] = useState("analyst");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -195,6 +203,7 @@ export default function App() {
   const ctx: Ctx | null = ws && membership && ws.id === membership.id ? {
     api, me, ws, wp: `/v1/workspaces/${ws.id}`, actor: `${me.issuer}|${me.subject}`, roles, grants, departments,
     staff: STAFF.some((r) => roles.has(r)),
+    internal: INTERNAL.some((r) => roles.has(r)),
     has: (...rs) => rs.some((r) => roles.has(r)),
     deptsFor: (...rs) => {
       const gs = grants.filter((g) => rs.includes(g.role));
@@ -273,9 +282,12 @@ export default function App() {
             : ctx ? (
               <WorkspaceContext.Provider value={ctx}>
                 {route.view === "dashboard" && <Dashboard />}
-                {route.view === "data" && ctx.staff && <HospitalData uploadId={route.param} />}
-                {route.view === "analysis" && ctx.staff && <Analysis analysisId={route.param} />}
-                {route.view === "gaps" && ctx.staff && <Gaps gapId={route.param} />}
+                {route.view === "workbench" && ctx.internal && <Workbench datasetId={route.param} />}
+                {route.view === "deliverables" && ctx.internal && <Deliverables />}
+                {route.view === "research" && !ctx.internal && <HospitalResearch reportId={route.param} />}
+                {route.view === "data" && (ctx.internal || ctx.has("data_steward", "coordinator")) && <HospitalData uploadId={route.param} />}
+                {route.view === "analysis" && ctx.internal && <Analysis analysisId={route.param} />}
+                {route.view === "gaps" && ctx.internal && <Gaps gapId={route.param} />}
                 {route.view === "ideas" && ctx.staff && <Ideas ideaId={route.param} />}
                 {route.view === "projects" && ctx.staff && <Projects projectId={route.param} />}
                 {route.view === "indicators" && ctx.staff && <Indicators />}
@@ -285,7 +297,7 @@ export default function App() {
               </WorkspaceContext.Provider>
             ) : route.ws ? <Loading /> : null}
         </main>
-        <div className="production-note"><ShieldCheck size={14} /> Aggregate data only · no patient-level records · every signal is reviewed before it becomes a study</div>
+        <div className="production-note"><ShieldCheck size={14} /> Identifiers removed on upload · every analysis step confirmed by a statistician · the hospital sees results only when released</div>
       </SidebarInset>
     </SidebarProvider>
   );

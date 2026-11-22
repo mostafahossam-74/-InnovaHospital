@@ -1,18 +1,19 @@
 # InnovaHospital
 
-Hospital research office and outcomes intelligence by InnovaStat CRO. The hospital sends **aggregate** data (patients per condition, management pathway, department and month, with deaths, readmissions, complications, length of stay and cost; plus monthly hospital parameters such as staffing and bed occupancy). InnovaHospital turns that data into:
+Hospital research office and outcomes research by InnovaStat CRO.
 
-1. **Disease burden.** Each condition's share of all cases, with 95% CIs and a trend test, plus mortality, readmission, length of stay and cost by department.
-2. **Management and outcomes.** Outcomes for each way a condition is managed, with comparative effectiveness between managements (risk differences, risk ratios, Benjamini–Hochberg q values).
-3. **Health economics.** Incremental cost, deaths averted, an ICER per death averted, dominance class, bed-days and annual budget impact.
-4. **Efficacy of hospital parameters.** Associations between parameters and outcomes, computed within departments so that case-mix differences between departments do not drive them.
-5. **A research-gap register.** Each signal becomes a candidate gap with a traceable statement, a 0–100 priority score and suggested designs. A reviewer other than the analyst confirms it.
-6. **Research ideas.** A confirmed gap becomes a ready-to-edit study concept (comparative effectiveness, cost-effectiveness and budget impact, interrupted time series, burden-and-outcomes cohort…). Ideas then go through the research office workflow: intake, triage, feasibility, conversion, ethics and data approvals, milestones, outputs and publications.
-7. **A monthly executive report** with disclosure control, review and release by different people, and a PDF.
+**The research cycle** (details in [docs/STUDIES.md](docs/STUDIES.md)):
 
-It implements `docs/Developer_Handoff.md` (the InnovaStat developer package; the Python reference is in `reference/`) and adds the hospital-data analytics module. It uses the same stack and conventions as InnovaEvidence: Node 22 TypeScript API, PostgreSQL 16 with row-level security, and a React + Vite web app.
+1. The hospital uploads patient-level Excel sheets to its workspace. Names, phone and ID numbers are removed on upload, and record numbers are pseudonymised.
+2. Inside the workspace, InnovaStat works through the data. An analyst or the Claude agent proposes each step, and the assigned statistician confirms it: data dictionary → cleaning and a random discovery/validation split → hypotheses screened on the discovery half → analysis plans locked before running → results on the held-out half, including cost-effectiveness → research ideas. **None of this is visible to the hospital.**
+3. InnovaStat releases a **Gaps & Research Ideas report**. The research director approves or declines each suggested study; an approved idea becomes an ongoing study in the hospital's portfolio.
+4. When results are ready, InnovaStat releases a **Results report**. After the hospital approves it, InnovaStat writes the **manuscript**, which a second person approves before it is sent.
 
-> Use synthetic data only until the hospital's governance, legal and data-protection review is complete (Handoff §8, Egypt PDPL 151/2020, KSA PDPL). The system stores no patient-level records.
+The hospital-side research office from the developer package also runs here: clinician idea intake and triage, studies with ethics and data-approval gates, milestones, outputs, quality indicators, training, partnerships and the monthly executive report. A second, aggregate route analyses monthly totals for disease burden, management outcomes, health economics and hospital parameters ([docs/ANALYTICS.md](docs/ANALYTICS.md)).
+
+Stack: Node 22 TypeScript API, PostgreSQL 16 with row-level security per hospital, React + Vite web app, the same as InnovaEvidence.
+
+> Use synthetic data until each hospital's data-sharing agreement, ethics approval and data-protection review cover patient-level uploads (Egypt PDPL 151/2020, KSA PDPL), and approve any use of the Claude agent.
 
 ## Quick start (local, synthetic data)
 
@@ -31,12 +32,20 @@ npm run dev:seed               # builds "Nile Demo Hospital (synthetic)" through
 cd web && VITE_AUTH_MODE=dev npm run dev    # http://localhost:5173
 ```
 
-Sign in as any demo user: `coordinator`, `reviewer`, `director`, `steward`, `pi` (Cardiology investigator), `icu_pi`, `governance`, `admin`, `exec` (executive reader) or `platform-admin`. The seed uploads 12 months of synthetic aggregates for Cardiology, Intensive Care, Oncology and Internal Medicine, verifies them, runs the analysis (it finds 18 gaps and the seed confirms 5), drafts an idea, activates a project, records indicators and releases the October report. `docs/sample-executive-report.pdf` is that released report.
+Sign in as any demo user. InnovaStat: `analyst`, `statistician`, `statistician2`. Hospital: `director`, `coordinator`, `steward`, `pi` (Cardiology), `icu_pi` (Intensive Care), `governance`, `admin`, `exec` (executive reader). Platform: `platform-admin`.
+
+The seed does the following:
+- uploads a synthetic 2,400-patient Excel workbook (with fake names and IDs, to show they are removed) and takes it through every confirmed step;
+- releases a Gaps & Ideas report with four suggested studies; the director approves the sepsis study, and the other three wait for a decision;
+- releases the sepsis results report, which the director approves, and sends the manuscript;
+- also loads 12 months of aggregate data and releases the October executive report.
+
+`docs/sample-gaps-ideas-report.pdf` and `docs/sample-executive-report.pdf` are released reports from the seed.
 
 Tests (each test file creates its own database):
 
 ```bash
-npm test          # 19 tests: statistics, analytics engine, API acceptance checks against PostgreSQL
+npm test          # 35 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
 npm run typecheck && (cd web && npx tsc -b)
 ```
 
@@ -71,11 +80,12 @@ An empty outcome cell means "not recorded", which is different from 0. Counts mu
 
 | Role | Can |
 |---|---|
+| InnovaStat analyst | Runs the study workbench and aggregate analyses, drafts ideas, reports and manuscripts, releases approved reports |
+| InnovaStat statistician (`innovastat_reviewer`) | Confirms each workbench step, accepts results run by others, confirms gaps and proposals, approves reports and manuscripts written by others |
 | Hospital administrator | Settings, departments, role grants |
-| Research director | Confirm gaps, triage ideas, define indicators, release reports |
+| Research director | Approves or declines suggested studies and results, accepts manuscripts, triages ideas, defines indicators, releases monthly reports |
 | Research coordinator | Run analyses, triage and convert ideas, move projects, draft reports |
-| InnovaStat reviewer | Verify uploads and indicators, confirm gaps, approve reports |
-| Data steward | Upload data and enter indicator values (for granted departments) |
+| Data steward | Uploads study Excel and monthly totals, enters indicator values (for granted departments) |
 | Principal investigator | Propose ideas, edit and submit their own, manage their projects' milestones and outputs |
 | Governance recorder | Record official ethics and data decisions |
 | Department lead | Work within their department, verify indicators |
@@ -93,6 +103,9 @@ A grant can apply to all departments or to one department, with an optional end 
 | `src/analytics/gaps.ts` | Signal → gap rules, statements and priority score |
 | `src/analytics/ideas.ts` | Study-concept templates per gap type; optional Claude drafter with number validation |
 | `src/analytics/synthetic.ts` | Deterministic synthetic hospital with planted signals (demo and tests) |
+| `db/migrations/002_studies.sql`, `src/api-studies.ts` | Study workbench, proposals, client reports, manuscripts, InnovaStat roles |
+| `src/studies/` | Excel parsing, de-identification, dictionary, cleaning, hypothesis screening, agent, reports, synthetic workbook |
+| `src/stats/` | Regression models (validated against statsmodels) and the study runner with IPTW and bootstrapped cost-effectiveness |
 | `src/api*.ts` | HTTP API (`/v1/workspaces/{id}/…`): core, data and analytics, research office, reports |
 | `src/reports/` | Monthly snapshot with disclosure control, and the PDF |
 | `web/` | React web app: overview, hospital data, outcomes analytics, gaps, ideas, projects, indicators, training and partnerships, reports, settings. English with an Arabic/RTL layout switch |
@@ -108,8 +121,9 @@ A grant can apply to all departments or to one department, with an optional end 
 | `AUTH_MODE` | `oidc` (default) or `local` (built-in email/password accounts, `LOCAL_AUTH_SECRET`) |
 | `OIDC_ISSUER`, `OIDC_AUDIENCE` | Hospital-approved identity provider |
 | `OBJECT_STORE_DIR` | Private write-once storage for released PDFs (swap for an object store in production) |
-| `INNOVA_ANTHROPIC_API_KEY` | Optional: enables "Draft with Claude" for study ideas (model `claude-opus-5-5`, override with `IDEA_AGENT_MODEL`). Without it, the deterministic templates are used |
+| `INNOVA_ANTHROPIC_API_KEY` | Optional: enables the Claude study agent (dictionary, hypotheses, plans, interpretation, manuscript) and idea drafting (model `claude-opus-5-5`; override with `STUDY_AGENT_MODEL` / `IDEA_AGENT_MODEL`). Without it, rules and templates run |
+| `DEID_KEY` | Secret for patient-ID pseudonyms (32+ random bytes). Required in production |
 | `SYNTHETIC_DATA=true` | Watermarks PDFs as synthetic |
 | `CORS_ORIGINS`, `WEB_DIST_DIR`, `PORT` | Hosting |
 
-Send hospital data to Claude only after the hospital approves the provider, the data boundary and the processing location (Handoff §5 step 7, §8). The drafter receives only the aggregate statistics of one confirmed gap.
+The agent never receives patient rows, only column profiles, summaries and result tables. Even so, enable it for a hospital only after the hospital approves the provider and the processing location.
