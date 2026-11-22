@@ -13,7 +13,8 @@ run_pg() { if [[ "$(id -un)" == postgres ]]; then "$@"; else su postgres -c "$(p
 run_pg "${PSQL[@]}" -d postgres -c "DROP DATABASE IF EXISTS \"$DB\" WITH (FORCE)"
 run_pg "${PSQL[@]}" -d postgres -c "CREATE DATABASE \"$DB\""
 # Same runner a deploy uses, connecting as the postgres superuser over the local socket.
+# The caller's node, not the postgres user's PATH (on CI runners that is an older Node).
 run_pg env MIGRATION_DATABASE_URL="postgresql://postgres@%2Fvar%2Frun%2Fpostgresql/$DB" \
-  node "$(readlink -f "$(dirname "$0")/migrate.ts")" > /dev/null
+  "$(command -v node)" "$(readlink -f "$(dirname "$0")/migrate.ts")" > /dev/null
 run_pg "${PSQL[@]}" -d "$DB" -c "ALTER ROLE ih_web PASSWORD 'ih_web_local'"
 echo "Database $DB ready."

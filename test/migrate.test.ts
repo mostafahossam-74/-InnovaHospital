@@ -11,7 +11,7 @@ const FILES = readdirSync(`${ROOT}db/migrations`).filter((f) => f.endsWith(".sql
 const asPostgres = (cmd: string, input?: string) => spawnSync("su", ["postgres", "-c", cmd], { input, encoding: "utf8" });
 const sql = (q: string) => execFileSync("su", ["postgres", "-c", `psql -v ON_ERROR_STOP=1 -qAt -d ${DB}`], { input: q, encoding: "utf8" }).trim();
 const migrate = (...args: string[]) => {
-  const r = asPostgres(`MIGRATION_DATABASE_URL='postgresql://postgres@%2Fvar%2Frun%2Fpostgresql/${DB}' node ${ROOT}scripts/migrate.ts ${args.join(" ")}`);
+  const r = asPostgres(`MIGRATION_DATABASE_URL='postgresql://postgres@%2Fvar%2Frun%2Fpostgresql/${DB}' ${process.execPath} ${ROOT}scripts/migrate.ts ${args.join(" ")}`);
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 };
 const recreate = () => asPostgres(`psql -q -d postgres -c 'DROP DATABASE IF EXISTS ${DB} WITH (FORCE)' -c 'CREATE DATABASE ${DB}'`);
@@ -57,7 +57,7 @@ test("an applied migration whose file changed stops the run", () => {
 });
 
 test("refuses to start without an owner connection string", () => {
-  const r = spawnSync("node", [`${ROOT}scripts/migrate.ts`], { encoding: "utf8", env: { ...process.env, MIGRATION_DATABASE_URL: "" } });
+  const r = spawnSync(process.execPath, [`${ROOT}scripts/migrate.ts`], { encoding: "utf8", env: { ...process.env, MIGRATION_DATABASE_URL: "" } });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /MIGRATION_DATABASE_URL/);
 });

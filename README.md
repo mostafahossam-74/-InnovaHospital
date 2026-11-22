@@ -44,7 +44,7 @@ The seed does the following:
 
 Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set before `npm run dev:api`): `npm run dev:agent-check` runs the same cycle with every step through the agent and prints, for each call, whether its output passed validation or fell back to the rules.
 
-Tests (each test file creates its own database):
+Tests (each test file creates its own database; GitHub Actions runs them, the type checks and the web build on every pull request and push to `main`, see `.github/workflows/test.yml`):
 
 ```bash
 npm test          # 43 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
