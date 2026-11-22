@@ -24,6 +24,9 @@ async function api(sub: string, method: string, path: string, body?: unknown, ke
 }
 
 const end = process.env.SEED_END ?? "2026-10";
+// SEED_AGENT=claude runs every workbench step through the Claude study agent
+// (the API needs INNOVA_ANTHROPIC_API_KEY); outputs that fail validation fall back to rules.
+const AI = process.env.SEED_AGENT === "claude";
 const ws = (await api("platform-admin", "POST", "/v1/admin/workspaces", { name: "Nile Demo Hospital (synthetic)", slug: `nile-demo-${Date.now().toString(36)}`, country: "EG", currency: "EGP" })).id;
 const W = `/v1/workspaces/${ws}`;
 const dept: Record<string, string> = {};
@@ -64,13 +67,13 @@ const ds = (await api("steward", "POST", `${W}/studies/datasets?title=${encodeUR
 const S = `${W}/studies`;
 let d = await api("analyst", "GET", `${S}/datasets/${ds}`);
 await api("analyst", "PATCH", `${S}/datasets/${ds}`, { expected_version: d.version, statistician: `${ISSUER}|statistician` });
-await api("analyst", "POST", `${S}/datasets/${ds}/dictionary/propose`, { mode: "rules" });
+await api("analyst", "POST", `${S}/datasets/${ds}/dictionary/propose`, { mode: AI ? "claude" : "rules" });
 d = await api("analyst", "GET", `${S}/datasets/${ds}`);
 await api("statistician", "POST", `${S}/datasets/${ds}/dictionary/confirm`, { expected_version: d.version });
 await api("analyst", "POST", `${S}/datasets/${ds}/clean`, {});
 d = await api("analyst", "GET", `${S}/datasets/${ds}`);
 await api("statistician", "POST", `${S}/datasets/${ds}/cleaning/confirm`, { expected_version: d.version });
-await api("analyst", "POST", `${S}/datasets/${ds}/hypotheses/generate`, { mode: "rules" });
+await api("analyst", "POST", `${S}/datasets/${ds}/hypotheses/generate`, { mode: AI ? "claude" : "rules" });
 d = await api("analyst", "GET", `${S}/datasets/${ds}`);
 const want = [d.hypotheses.find((x: any) => x.kind === "comparative" && /Sepsis/.test(x.title) && x.variables.outcome === "died"),
   d.hypotheses.find((x: any) => x.kind === "economic" && /myocardial/.test(x.title)),
@@ -80,9 +83,9 @@ for (const x of want) await api("statistician", "POST", `${S}/hypotheses/${x.id}
 const proposals: string[] = [];
 let firstResult = "";
 for (const x of want.filter((x: any) => x.kind !== "burden")) {
-  const plan = await api("analyst", "POST", `${S}/hypotheses/${x.id}/plans`, {});
+  const plan = await api("analyst", "POST", `${S}/hypotheses/${x.id}/plans`, { mode: AI ? "claude" : "template" });
   await api("statistician", "POST", `${S}/plans/${plan.id}/lock`, { expected_version: 1 });
-  const res = await api("analyst", "POST", `${S}/plans/${plan.id}/run`, {});
+  const res = await api("analyst", "POST", `${S}/plans/${plan.id}/run`, { interpret: AI ? "claude" : "template" });
   await api("statistician", "POST", `${S}/results/${res.id}/review`, { decision: "accepted" });
   firstResult ||= res.id;
   proposals.push((await api("analyst", "POST", "/v1/workspaces/" + ws + "/proposals", { result_id: res.id, department_id: /myocardial/.test(x.title) ? dept.cardio : dept.icu })).id);
@@ -100,7 +103,7 @@ const rr = await api("analyst", "POST", `${W}/client-reports`, { kind: "results"
 await api("statistician2", "POST", `${W}/client-reports/${rr.id}/approve`, { digest: rr.digest });
 await api("analyst", "POST", `${W}/client-reports/${rr.id}/release`, { digest: rr.digest }, crypto.randomUUID());
 await api("director", "POST", `${W}/client-reports/${rr.id}/hospital-decision`, { decision: "approved", note: "Approved for manuscript." });
-const ms = await api("analyst", "POST", `/v1/workspaces/${ws}/projects/${approved.project_id}/manuscripts`, { mode: "template" });
+const ms = await api("analyst", "POST", `/v1/workspaces/${ws}/projects/${approved.project_id}/manuscripts`, { mode: AI ? "claude" : "template" });
 await api("statistician", "POST", `${W}/manuscripts/${ms.id}/approve`, {});
 await api("analyst", "POST", `${W}/manuscripts/${ms.id}/send`, {});
 
@@ -116,4 +119,11 @@ await api("coordinator", "POST", `${W}/partnerships`, { organization: "Synthetic
 const r = await api("coordinator", "POST", `${W}/report-runs`, { period: end }, crypto.randomUUID());
 await api("statistician", "POST", `${W}/reports/${r.id}/review`, { decision: "approve", digest: r.digest });
 await api("director", "POST", `${W}/reports/${r.id}/publish`, { digest: r.digest }, crypto.randomUUID());
+if (AI) {
+  const d2 = await api("analyst", "GET", `${S}/datasets/${ds}`);
+  console.log("Agent calls on the dataset (newest first):");
+  for (const c of d2.agent_calls) console.log(`  ${c.task.padEnd(11)} ${c.accepted ? "ACCEPTED" : "FELL BACK"} ${c.model} ${c.problems.join("; ")}`);
+  console.log(`Hypotheses from Claude: ${d2.hypotheses.filter((h: any) => h.origin === "claude").length}; plans from Claude: ${d2.plans.filter((p: any) => p.origin === "claude").length}`);
+  console.log(`Manuscript origin: ${ms.origin}${ms.fallback_reasons.length ? ` (${ms.fallback_reasons.join("; ")})` : ""}`);
+}
 console.log(JSON.stringify({ workspace: ws, dataset: ds, proposals: proposals.length, project: approved.project_id, manuscript: ms.id, report: r.id }, null, 2));

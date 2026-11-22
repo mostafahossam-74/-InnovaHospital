@@ -42,6 +42,8 @@ The seed does the following:
 
 `docs/sample-gaps-ideas-report.pdf` and `docs/sample-executive-report.pdf` are released reports from the seed.
 
+Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set before `npm run dev:api`): `npm run dev:agent-check` runs the same cycle with every step through the agent and prints, for each call, whether its output passed validation or fell back to the rules.
+
 Tests (each test file creates its own database):
 
 ```bash
