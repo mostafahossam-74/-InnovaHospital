@@ -65,7 +65,13 @@ export function Tags({ items }: { items: string[] }) {
 export const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 export const fmtDateTime = (v: string | null | undefined) =>
   v ? new Date(v).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-export const fmtPeriod = (p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+const fmtMonth = (p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+/** One month ("October 2026") or a report range "YYYY-MM_YYYY-MM" ("January – April 2026"). */
+export const fmtPeriod = (p: string) => {
+  const [a, b] = p.split("_");
+  if (!b) return fmtMonth(a);
+  return a.slice(0, 4) === b.slice(0, 4) ? `${fmtMonth(a).split(" ")[0]} – ${fmtMonth(b)}` : `${fmtMonth(a)} – ${fmtMonth(b)}`;
+};
 export const shortSub = (actor: string | null | undefined) => (actor ? actor.slice(actor.lastIndexOf("|") + 1) : "—");
 export const newKey = () => crypto.randomUUID();
 

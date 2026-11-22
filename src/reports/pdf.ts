@@ -9,7 +9,7 @@ const BOLD = fileURLToPath(new URL("../../assets/fonts/DejaVuSans-Bold.ttf", imp
 const TEAL = "#17434B", LIGHT = "#EAF3F3", MUTED = "#5b6b70";
 
 export function renderPdf(s: Snapshot, meta: { revision: number; status: string; digest: string; synthetic?: boolean }): Promise<Buffer> {
-  const doc = new PDFDocument({ size: "A4", margin: 50, bufferPages: true, info: { Title: `InnovaHospital Executive Report ${s.period}`, Author: "InnovaHospital" } });
+  const doc = new PDFDocument({ size: "A4", margin: 50, bufferPages: true, info: { Title: `InnovaHospital Executive Report ${s.period_label ?? s.period}`, Author: "InnovaHospital" } });
   doc.registerFont("body", FONT); doc.registerFont("bold", BOLD);
   const chunks: Buffer[] = [];
   doc.on("data", (b: Buffer) => chunks.push(b));
@@ -38,7 +38,7 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
   };
 
   h1("InnovaHospital Executive Report");
-  p(`${s.hospital} | ${s.period} | Revision ${meta.revision} | ${meta.status.toUpperCase()}`, { continued: false });
+  p(`${s.hospital} | ${s.period_label ?? s.period} | Revision ${meta.revision} | ${meta.status.toUpperCase()}`, { continued: false });
   if (meta.synthetic) p("SYNTHETIC DEMONSTRATION DATA");
   doc.fontSize(7).fillColor(MUTED).text(`Snapshot digest ${meta.digest}`);
 
@@ -47,7 +47,7 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
 
   h2("Research funnel and portfolio");
   table(["Idea status", "Ideas"], s.funnel.ideas_by_status.map((x: any) => [x.status, x.n]), [3, 1]);
-  p(`Ideas triaged in ${s.period}: ${s.funnel.triaged_in_period}; median triage turnaround: ${s.funnel.median_triage_days ?? "—"} days.`);
+  p(`Ideas triaged in ${s.period_label ?? s.period}: ${s.funnel.triaged_in_period}; median triage turnaround: ${s.funnel.median_triage_days ?? "—"} days.`);
   table(["Project stage", "Projects"], s.portfolio.by_stage.map((x: any) => [x.stage, x.projects]), [3, 1]);
   p(`Activated during the month: ${s.portfolio.activated_in_period}. Milestones due: ${s.milestones.due_in_period}, on time: ${s.milestones.completed_on_time}` +
     `${s.milestones.on_time_rate_percent !== null ? ` (${s.milestones.on_time_rate_percent}%)` : ""}; overdue unresolved: ${s.milestones.overdue_unresolved}.`);
@@ -101,7 +101,7 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
     const bottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
     doc.font("body").fontSize(7.5).fillColor(MUTED).opacity(1)
-      .text(`InnovaHospital | ${s.hospital} | ${s.period} r${meta.revision} | page ${i + 1} of ${range.count}`, 50, doc.page.height - 40, { width: W, align: "center", lineBreak: false });
+      .text(`InnovaHospital | ${s.hospital} | ${s.period_label ?? s.period} r${meta.revision} | page ${i + 1} of ${range.count}`, 50, doc.page.height - 40, { width: W, align: "center", lineBreak: false });
     doc.page.margins.bottom = bottom;
   }
   doc.end();

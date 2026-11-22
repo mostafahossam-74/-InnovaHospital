@@ -9,7 +9,7 @@ Hospital research office and outcomes research by InnovaStat CRO.
 3. InnovaStat releases a **Gaps & Research Ideas report**. The research director approves or declines each suggested study; an approved idea becomes an ongoing study in the hospital's portfolio.
 4. When results are ready, InnovaStat releases a **Results report**. After the hospital approves it, InnovaStat writes the **manuscript**, which a second person approves before it is sent.
 
-The hospital-side research office from the developer package also runs here: clinician idea intake and triage, studies with ethics and data-approval gates, milestones, outputs, quality indicators, training, partnerships and the monthly executive report. A second, aggregate route analyses monthly totals for disease burden, management outcomes, health economics and hospital parameters ([docs/ANALYTICS.md](docs/ANALYTICS.md)).
+The hospital-side research office from the developer package also runs here: clinician idea intake and triage, studies with ethics and data-approval gates, milestones, outputs, quality indicators, training, partnerships and the executive report, for the months the coordinator chooses. A second, aggregate route analyses monthly totals for disease burden, management outcomes, health economics and hospital parameters ([docs/ANALYTICS.md](docs/ANALYTICS.md)).
 
 Stack: Node 22 TypeScript API, PostgreSQL 16 with row-level security per hospital, React + Vite web app, the same as InnovaEvidence.
 
@@ -47,7 +47,7 @@ Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set befor
 Tests (each test file creates its own database; GitHub Actions runs them, the type checks and the web build on every pull request and push to `main`, see `.github/workflows/test.yml`):
 
 ```bash
-npm test          # 66 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
+npm test          # 71 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
 npm run typecheck && (cd web && npx tsc -b)
 ```
 
@@ -85,7 +85,7 @@ An empty outcome cell means "not recorded", which is different from 0. Counts mu
 | InnovaStat analyst | Runs the study workbench and aggregate analyses, drafts ideas, reports and manuscripts, releases approved reports |
 | InnovaStat statistician (`innovastat_reviewer`) | Confirms each workbench step, accepts results run by others, confirms gaps and proposals, approves reports and manuscripts written by others |
 | Hospital administrator | Settings, departments, role grants |
-| Research director | Approves or declines suggested studies and results, accepts manuscripts, triages ideas, defines indicators, releases monthly reports |
+| Research director | Approves or declines suggested studies and results, accepts manuscripts, triages ideas, defines indicators, releases executive reports |
 | Research coordinator | Run analyses, triage and convert ideas, move projects, draft reports |
 | Data steward | Uploads study Excel and monthly totals, enters indicator values (for granted departments) |
 | Principal investigator | Propose ideas, edit and submit their own, manage their projects' milestones and outputs |
@@ -117,12 +117,22 @@ A grant can apply to all departments or to one department, with an optional end 
 
 ## Scheduler
 
-`npm run start:worker` runs the scheduler next to the API, with the same `DATABASE_URL`. Every minute it:
+`npm run start:worker` runs the scheduler next to the API, with the same `DATABASE_URL`. Every minute it runs the governance expiry sweep once per local day in each hospital's timezone, putting active projects whose approvals have lapsed on hold, and sends due notifications.
 
-- drafts each active hospital's report for the month just closed, at the hospital's `report_day` and `report_hour` in its own timezone (default the 1st at 09:00). If someone already drafted that month, it skips it. The draft's author is `service:scheduler`; review and release stay with people, as for any draft;
-- runs the governance expiry sweep once per local day, putting active projects whose approvals have lapsed on hold.
+Reports are not drafted automatically: hospitals send data when they have it, and a coordinator drafts a report for the months they choose (see "Executive reports").
 
-Jobs are kept in `scheduled_job`, one per hospital, kind and month or day, so each runs once even with several workers. A job and its effects commit in one transaction. A failing job is rolled back and retried after 5, 10, 20 and 40 minutes; after the fifth failure it is marked `failed` and recorded in the audit log, and a person handles that month (for example with "Draft report").
+Jobs are kept in `scheduled_job`, one per hospital, kind and day, so each runs once even with several workers. A job and its effects commit in one transaction. A failing job is rolled back and retried after 5, 10, 20 and 40 minutes; after the fifth failure it is marked `failed`, recorded in the audit log and the coordinators are told. Monthly draft jobs queued by an earlier version are closed without drafting.
+
+## Executive reports
+
+Data is entered per month; a report covers any range of months the coordinator chooses, up to 36 (`POST /report-runs` with `period_start` and `period_end`, or `period` for one month). Each department's indicator is the sum of its months, reported as missing, unverified or returned if any month is. The report key is `YYYY-MM` or `YYYY-MM_YYYY-MM`; a new draft of the same months is a new revision.
+
+Disclosure control (`src/reports/disclosure.ts`):
+
+- a department's figure is suppressed when its events or non-events are below the hospital's threshold (default 5);
+- the hospital-wide total is withheld while a department is pending, and suppressed when its own count is small or when subtracting the shown departments would reveal a small count;
+- ranges can overlap reports already released (January–March released, then January–April). A figure is hidden when, combined with released reports, it would let a reader work out a small count for some departments and months — April alone, for example. The check uses the figures as published, and any linear combination of them, not only one subtraction;
+- approval and release re-check the stored report and refuse with `disclosure_risk`; a report released in the meantime makes a draft stale (`inputs_changed`), so it is rebuilt against it.
 
 ### Notifications
 
@@ -130,9 +140,9 @@ Events queue a notice in the same transaction, one per recipient, and the worker
 
 | Event | Who is told |
 |---|---|
-| A report is drafted (by a person or the scheduler) | InnovaStat reviewers (research directors if there are none), not the author |
+| A report is drafted | InnovaStat reviewers (research directors if there are none), not the author |
 | A report is approved | Research directors, who release it |
-| A report is returned | Its author; for a scheduler draft, the coordinators |
+| A report is returned | Its author (the coordinators, for a draft made by an earlier version's scheduler) |
 | A project is put on hold | Its PI and the coordinators for its department |
 | A scheduled job fails for good | Coordinators |
 

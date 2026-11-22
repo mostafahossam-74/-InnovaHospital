@@ -76,3 +76,102 @@ export function disclosureProblems(s: { disclosure_threshold: number; indicators
   }
   return problems;
 }
+
+// ---- Across reports ----------------------------------------------------------------------------
+// Reports cover ranges of months, and ranges can overlap (January–March released, then
+// January–April). Every figure a reader has seen is a sum over some departments and some months;
+// any linear combination of them can be worked out (April alone = January–April minus
+// January–March). findLeak() asks whether a new report's figures make some block of
+// departments × months computable that was not before, and works out the value a reader would get
+// from the figures as published; it is a leak when that has fewer than the threshold of events or
+// non-events. Months are grouped into "atoms" that no figure tells apart, so a block is a set of
+// departments × a set of atoms; membership in the span of the figures is tested exactly.
+
+/** A figure a reader sees: a sum over departments and months, with the numbers as shown. */
+export type Figure = { depts: string[]; months: string[]; numerator: number; denominator: number };
+
+const EPS = 1e-9;
+type Row = { row: number[]; val: [number, number]; pivot: number };
+/** Reduced row echelon basis (Gaussian elimination); each row carries its numbers along. */
+function basis(rows: { row: number[]; val: [number, number] }[]): Row[] {
+  const out: Row[] = [];
+  for (const r0 of rows) {
+    const { rest, val } = reduce(r0.row, out, r0.val);
+    const pivot = rest.findIndex((v) => Math.abs(v) > EPS);
+    if (pivot < 0) continue;
+    const k = rest[pivot];
+    const scaled = rest.map((v) => v / k), sval: [number, number] = [val[0] / k, val[1] / k];
+    for (const b of out) {
+      const f = b.row[pivot];
+      if (Math.abs(f) > EPS) { for (let j = 0; j < scaled.length; j++) b.row[j] -= f * scaled[j]; b.val[0] -= f * sval[0]; b.val[1] -= f * sval[1]; }
+    }
+    out.push({ row: scaled, val: sval, pivot });
+  }
+  return out;
+}
+/** What remains of v after taking out the basis, and the numbers of the part taken out (start: val0 − ...). */
+function reduce(v: number[], b: Row[], val0: [number, number] = [0, 0]): { rest: number[]; val: [number, number] } {
+  const rest = [...v];
+  const val: [number, number] = [...val0];
+  for (const { row, val: bv, pivot } of b) {
+    const f = rest[pivot];
+    if (Math.abs(f) > EPS) { for (let j = 0; j < rest.length; j++) rest[j] -= f * row[j]; val[0] -= f * bv[0]; val[1] -= f * bv[1]; }
+  }
+  return { rest, val };
+}
+const inSpan = (v: number[], b: Row[]) => reduce(v, b).rest.every((x) => Math.abs(x) <= EPS);
+/** The numbers a reader computes for v from the figures (v must be in their span). */
+const revealed = (v: number[], b: Row[]): [number, number] => { const { val } = reduce(v, b); return [-val[0], -val[1]]; };
+
+/** Subsets of 0..n-1 (as index lists), all of them when there are at most 2^maxBits, else singletons, pairs and the whole set. */
+function subsets(n: number, maxBits: number): number[][] {
+  const out: number[][] = [];
+  if (n <= maxBits) { for (let m = 1; m < 1 << n; m++) out.push([...Array(n).keys()].filter((i) => m & (1 << i))); return out; }
+  for (let i = 0; i < n; i++) { out.push([i]); for (let j = i + 1; j < n; j++) out.push([i, j]); }
+  out.push([...Array(n).keys()]);
+  return out;
+}
+
+export type Leak = { figure: number; depts: string[]; months: string[]; numerator: number; denominator: number };
+
+/**
+ * Returns a block of departments × months that the new figures make computable, together with
+ * the released ones, whose computed value has fewer than `threshold` events or non-events; and
+ * the index of the new figure to hide for it (the first, in the given order, whose removal makes
+ * the block uncomputable again). Null when the new figures disclose nothing new.
+ */
+export function findLeak(threshold: number, newFigs: Figure[], oldFigs: Figure[]): Leak | null {
+  if (!newFigs.length) return null;
+  const all = [...oldFigs, ...newFigs];
+  const depts = [...new Set(all.flatMap((f) => f.depts))].sort();
+  const months = [...new Set(all.flatMap((f) => f.months))].sort();
+  // Atoms: months that every figure either covers together or leaves out together.
+  const sig = (m: string) => all.map((f) => (f.months.includes(m) ? "1" : "0")).join("");
+  const atoms = [...new Set(months.map(sig))].map((s) => months.filter((m) => sig(m) === s));
+  const cols = depts.length * atoms.length;
+  const col = (d: number, a: number) => d * atoms.length + a;
+  const vec = (f: Figure) => {
+    const v = new Array(cols).fill(0);
+    for (const d of f.depts) for (let a = 0; a < atoms.length; a++) if (f.months.includes(atoms[a][0])) v[col(depts.indexOf(d), a)] = 1;
+    return { row: v, val: [f.numerator, f.denominator] as [number, number] };
+  };
+  const oldBasis = basis(oldFigs.map(vec));
+  const allBasis = basis(all.map(vec));
+  // Budget: every group of departments × every set of atoms when small, else a reduced family.
+  const dBits = depts.length <= 7 ? 7 : 0, aBits = atoms.length <= 8 ? 8 : 0;
+  for (const g of subsets(depts.length, dBits)) {
+    for (const s of subsets(atoms.length, aBits)) {
+      const v = new Array(cols).fill(0);
+      for (const d of g) for (const a of s) v[col(d, a)] = 1;
+      if (!inSpan(v, allBasis) || inSpan(v, oldBasis)) continue;
+      const [num, den] = revealed(v, allBasis).map((x) => Math.round(x * 1e6) / 1e6);
+      // A real count with too few events or non-events (inconsistent figures, e.g. a correction, give no count).
+      if (!(den > 0 && num >= 0 && num <= den && (num < threshold || den - num < threshold))) continue;
+      // Which new figure to hide: the first whose removal makes the block uncomputable.
+      let figure = newFigs.findIndex((_, i) => !inSpan(v, basis([...oldFigs, ...newFigs.filter((__, j) => j !== i)].map(vec))));
+      if (figure < 0) figure = newFigs.findIndex((f) => f.depts.some((d) => g.includes(depts.indexOf(d))) && s.some((a) => f.months.includes(atoms[a][0])));
+      return { figure: Math.max(figure, 0), depts: g.map((d) => depts[d]), months: s.flatMap((a) => atoms[a]), numerator: num, denominator: den };
+    }
+  }
+  return null;
+}

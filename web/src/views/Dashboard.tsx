@@ -13,7 +13,7 @@ export function Dashboard() {
     const latest = analyses.items[0] ? await api.get(`${wp}/analyses/${analyses.items[0].id}`) : null;
     return { latest, gaps: gaps.items, ideas: ideas.items, projects: projects.items, proposals: proposals.items };
   }, [wp, staff, internal]);
-  if (!staff) return <Notice>Released monthly reports are under <a className="ie-link" onClick={() => go("reports")}>Monthly reports</a>.</Notice>;
+  if (!staff) return <Notice>Released reports are under <a className="ie-link" onClick={() => go("reports")}>Executive reports</a>.</Notice>;
   if (d.loading) return <Loading />;
   if (d.error) return <Notice kind="error">{d.error}</Notice>;
   const { latest, gaps, ideas, projects, proposals } = d.data!;

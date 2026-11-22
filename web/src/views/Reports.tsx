@@ -12,15 +12,20 @@ export function Reports({ reportId }: { reportId: string | null }) {
   const d = useLoad(() => (reportId ? api.get(`${wp}/reports/${reportId}`) : Promise.resolve(null)), [wp, reportId]);
   const act = useAction();
   const now = new Date(); const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  const [period, setPeriod] = useState(`${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, "0")}`);
+  const prevMonth = `${prev.getUTCFullYear()}-${String(prev.getUTCMonth() + 1).padStart(2, "0")}`;
+  // A report covers the months the coordinator chooses (data is entered monthly).
+  const [start, setStart] = useState(prevMonth);
+  const [end, setEnd] = useState(prevMonth);
   const [note, setNote] = useState("");
   const r = d.data; const s = r?.snapshot;
   const reload = () => { d.reload(); list.reload(); };
   return (
     <div className="ie-split">
       <Panel title="Revisions" actions={has("coordinator") && (
-        <span className="ie-inline"><input className="ie-input sm" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Report month" />
-          <Button size="sm" disabled={act.busy} onClick={() => act.run(async () => { const x = await api.post(`${wp}/report-runs`, { period }, { idempotencyKey: newKey() }); list.reload(); go("reports", x.id); })}><FileText size={14} /> Draft</Button></span>)}>
+        <span className="ie-inline"><input className="ie-input sm" type="month" value={start} onChange={(e) => { setStart(e.target.value); if (e.target.value > end) setEnd(e.target.value); }} aria-label="First month" />
+          <span className="muted small">to</span>
+          <input className="ie-input sm" type="month" value={end} min={start} onChange={(e) => setEnd(e.target.value)} aria-label="Last month" />
+          <Button size="sm" disabled={act.busy || end < start} onClick={() => act.run(async () => { const x = await api.post(`${wp}/report-runs`, { period_start: start, period_end: end }, { idempotencyKey: newKey() }); list.reload(); go("reports", x.id); })}><FileText size={14} /> Draft</Button></span>)}>
         {list.loading ? <Loading /> : !list.data?.items.length ? <Empty>No reports yet.</Empty> : (
           <table className="ie-table compact"><tbody>{list.data.items.map((x: any) => (
             <tr key={x.id} className="clickable" onClick={() => go("reports", x.id)}><td><b>{fmtPeriod(x.period)}</b><div className="muted small">revision {x.revision} · {fmtDateTime(x.created_at)}</div></td><td><Status value={x.status} /></td></tr>))}</tbody></table>)}

@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { Client, Pool } from "./db.ts";
 import { withTenant } from "./db.ts";
 import { LOCAL_ISSUER } from "./local-auth.ts";
+import { periodLabel } from "./period.ts";
 
 export type NoticeKind = "report_review_needed" | "report_release_needed" | "report_returned" | "project_on_hold" | "scheduler_job_failed";
 export const MAX_SEND_ATTEMPTS = 5;
@@ -45,19 +46,17 @@ export async function notify(c: Client, wsId: string, n: Notice): Promise<number
 }
 
 // ---- Messages --------------------------------------------------------------------------------
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const monthName = (period = "") => /^\d{4}-\d{2}$/.test(period) ? `${MONTHS[Number(period.slice(5)) - 1]} ${period.slice(0, 4)}` : period;
-const TASKS: Record<string, string> = { report_draft: "monthly report draft", expiry_check: "governance expiry check" };
+const TASKS: Record<string, string> = { expiry_check: "governance expiry check" };
 const FOOTER = "This message does not include any report or project details. Sign in to see them.";
 
 export function renderMessage(kind: NoticeKind, p: Record<string, string>, hospital: string, link: string): { subject: string; text: string } {
-  const month = monthName(p.period);
+  const month = periodLabel(p.period ?? "");
   const [subject, line, action] = {
-    report_review_needed: [`Report for ${month} is ready for review`, `The monthly report for ${month} has been drafted and is waiting for review.`, "Sign in to review it"],
-    report_release_needed: [`Report for ${month} is ready for release`, `The monthly report for ${month} has been reviewed and approved, and is waiting for release.`, "Sign in to release it"],
-    report_returned: [`Report for ${month} was returned`, `The reviewer returned the monthly report for ${month} with a note.`, "Sign in to read the note and draft a new revision"],
+    report_review_needed: [`Report for ${month} is ready for review`, `The report for ${month} has been drafted and is waiting for review.`, "Sign in to review it"],
+    report_release_needed: [`Report for ${month} is ready for release`, `The report for ${month} has been reviewed and approved, and is waiting for release.`, "Sign in to release it"],
+    report_returned: [`Report for ${month} was returned`, `The reviewer returned the report for ${month} with a note.`, "Sign in to read the note and draft a new revision"],
     project_on_hold: ["A project was put on hold", "A project you are responsible for was put on hold because its approvals need attention.", "Sign in to see the project and what it needs"],
-    scheduler_job_failed: ["A scheduled task needs attention", `The scheduled ${TASKS[p.task] ?? "task"} for ${p.task === "report_draft" ? month : p.key} failed after ${p.attempts ?? "several"} attempts.`, "Sign in to handle it by hand"],
+    scheduler_job_failed: ["A scheduled task needs attention", `The scheduled ${TASKS[p.task] ?? "task"} for ${p.key} failed after ${p.attempts ?? "several"} attempts.`, "Sign in to handle it by hand"],
   }[kind];
   return { subject: `[${hospital}] ${subject}`, text: `${line}\n\n${action}:\n${link}\n\n${FOOTER}\n` };
 }
