@@ -4,7 +4,7 @@ import { useWs } from "@/app/context";
 import { useAction, useLoad } from "@/lib/hooks";
 import { openBlob } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Bar, Empty, Feedback, Field, Loading, Notice, Panel, Status, fmtDateTime, fmtPeriod, label, newKey, shortSub } from "@/components/common";
+import { Empty, Feedback, Field, Loading, Notice, Panel, Status, fmtDateTime, fmtPeriod, label, newKey, shortSub } from "@/components/common";
 
 export function Reports({ reportId }: { reportId: string | null }) {
   const { api, wp, has, go, actor } = useWs();
@@ -44,13 +44,9 @@ export function Reports({ reportId }: { reportId: string | null }) {
             <h3 className="ie-h3">Executive summary</h3>
             <ul>{s.executive_summary.map((l: string) => <li key={l}>{l}</li>)}</ul>
             {s.research_intelligence && <>
-              <h3 className="ie-h3">Research intelligence from hospital data ({s.research_intelligence.covers})</h3>
-              <table className="ie-table compact"><thead><tr><th>Condition</th><th>Share of cases</th><th className="ih-num">Mortality</th></tr></thead>
-                <tbody>{s.research_intelligence.top_conditions.map((c: any) => <tr key={c.condition_code}><td>{c.condition_label}</td>
-                  <td style={{ minWidth: 160 }}>{c.status === "suppressed" ? <span className="muted">suppressed</span> : <Bar value={c.share_percent / 100} max={s.research_intelligence.top_conditions[0].share_percent / 100} text={`${c.share_percent}%`} />}</td>
-                  <td className="ih-num">{c.mortality_percent === null || c.mortality_percent === undefined ? "—" : `${c.mortality_percent}%`}</td></tr>)}</tbody></table>
-              <table className="ie-table compact"><thead><tr><th>Confirmed gap</th><th>Category</th><th className="ih-num">Priority</th></tr></thead>
-                <tbody>{s.research_intelligence.confirmed_gaps.map((g: any) => <tr key={g.title}><td>{g.title}</td><td className="small">{label(g.study_category)}</td><td className="ih-num">{g.priority_score}</td></tr>)}</tbody></table>
+              <h3 className="ie-h3">Research from InnovaStat</h3>
+              <table className="ie-table compact"><thead><tr><th>Suggested study</th><th>Category</th><th>Decision</th></tr></thead>
+                <tbody>{s.research_intelligence.ideas.map((g: any) => <tr key={g.title}><td>{g.title}</td><td className="small">{label(g.study_category)}</td><td><Status value={g.status === "released" ? "proposed" : g.status} /></td></tr>)}</tbody></table>
             </>}
             <h3 className="ie-h3">Quality indicators</h3>
             <table className="ie-table compact"><thead><tr><th>Department</th><th>Indicator</th><th>Status</th><th className="ih-num">Value</th><th className="ih-num">Target</th></tr></thead>

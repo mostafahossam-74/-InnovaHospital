@@ -16,6 +16,8 @@ import type { DataDeps } from "./api-data.ts";
 import { registerOfficeRoutes } from "./api-office.ts";
 import { registerReportRoutes } from "./api-reports.ts";
 import type { ReportDeps } from "./api-reports.ts";
+import { registerStudyRoutes } from "./api-studies.ts";
+import type { StudyDeps } from "./api-studies.ts";
 
 const roleEnum = z.enum(ROLES as [string, ...string[]]);
 const provisionBody = z.object({
@@ -49,9 +51,9 @@ const departmentBody = z.object({
   site: text(120).optional(), service_line: text(120).optional(), lead: text(255).optional(),
 }).strict();
 
-export type Deps = { pool: Pool; auth: AuthConfig; reports: ReportDeps; corsOrigins?: string[]; data?: DataDeps };
+export type Deps = { pool: Pool; auth: AuthConfig; reports: ReportDeps; corsOrigins?: string[]; data?: DataDeps; studies?: Omit<StudyDeps, "store" | "synthetic" | "drafter"> };
 
-export function buildRouter({ pool, auth: authConfig, reports, corsOrigins = [], data = { drafter: null } }: Deps): Router {
+export function buildRouter({ pool, auth: authConfig, reports, corsOrigins = [], data = { drafter: null }, studies = { agent: null, deidKey: "dev-only-deid-key" } }: Deps): Router {
   const r = new Router(corsOrigins);
   const auth: AuthConfig = authConfig.local
     ? { ...authConfig, verify: (id, o) => checkLocalSession(pool, id, o.allowPasswordChange) }
@@ -182,6 +184,7 @@ export function buildRouter({ pool, auth: authConfig, reports, corsOrigins = [],
   registerDataRoutes({ r, pool, scoped, identify }, data);
   registerOfficeRoutes({ r, pool, scoped, identify });
   registerReportRoutes({ r, pool, scoped, identify }, reports);
+  registerStudyRoutes({ r, pool, scoped, identify }, { ...studies, drafter: data.drafter, store: reports.store, synthetic: reports.synthetic });
   return r;
 }
 

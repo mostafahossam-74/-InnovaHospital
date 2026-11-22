@@ -20,11 +20,25 @@ export type Ctx = {
   query: URLSearchParams;
   requestId: string;
   body: () => Promise<unknown>;
+  /** Raw request body (file uploads), up to MAX_RAW bytes. */
+  raw: () => Promise<Buffer>;
 };
 export type Reply = { status?: number; body: unknown; raw?: { contentType: string; data: Buffer; headers?: Record<string, string> } };
 type Handler = (ctx: Ctx) => Promise<Reply>;
 
 const MAX_BODY = 1_000_000;
+export const MAX_RAW = 50_000_000;
+
+async function readRaw(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_RAW) throw new ApiError(413, "payload_too_large", "The file is larger than 50 MB");
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const type = req.headers["content-type"] ?? "";
@@ -95,6 +109,7 @@ export class Router {
       const reply = await route.handler({
         req, params, query: url.searchParams, requestId,
         body: () => (cached ??= readJson(req)),
+        raw: () => readRaw(req),
       });
       status = reply.status ?? 200;
       body = reply.body;

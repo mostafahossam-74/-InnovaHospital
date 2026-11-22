@@ -60,17 +60,11 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
   p(`Indicator completeness: ${s.indicator_completeness_percent ?? "—"}%.`);
 
   const ri = s.research_intelligence as any;
-  h2("Research intelligence from hospital data");
-  if (!ri) p("No analysis of hospital data covers this period yet.");
+  h2("Research from InnovaStat");
+  if (!ri) p("No InnovaStat research report has been released yet.");
   else {
-    p(`Analysis of ${ri.total_cases} aggregate cases, ${ri.covers}. Disease burden (largest conditions):`);
-    table(["Condition", "Cases", "Share of cases", "Mortality"], ri.top_conditions.map((c: any) => c.status === "suppressed"
-      ? [`${c.condition_label} (${c.condition_code})`, "suppressed", "—", "—"]
-      : [`${c.condition_label} (${c.condition_code})`, c.cases, `${c.share_percent}%`, c.mortality_percent === null ? "—" : `${c.mortality_percent}%`]), [4, 1, 1.4, 1.2]);
-    p("Confirmed research gaps (highest priority first):");
-    if (!ri.confirmed_gaps.length) p("None confirmed yet.");
-    else table(["Gap", "Category", "Priority"], ri.confirmed_gaps.map((g: any) => [g.title, g.study_category.replaceAll("_", " "), g.priority_score]), [5, 2, 1]);
-    p(`${ri.gaps_awaiting_review} gaps await review; ${ri.ideas_from_gaps} research ideas have been generated from gaps.`);
+    p(`Ideas suggested: ${ri.ideas.length}; approved: ${ri.ideas_approved}; awaiting a decision: ${ri.ideas_awaiting_decision}. Results reports awaiting approval: ${ri.results_awaiting_approval}.`);
+    if (ri.ideas.length) table(["Suggested study", "Category", "Decision"], ri.ideas.map((g: any) => [g.title, String(g.study_category).replaceAll("_", " "), g.status === "released" ? "awaiting decision" : g.status]), [5, 2, 1.4]);
   }
 
   h2("Outputs, training and partnerships");

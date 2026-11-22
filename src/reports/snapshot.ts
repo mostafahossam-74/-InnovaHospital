@@ -31,7 +31,7 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
       FROM idea_history GROUP BY idea_id)
     SELECT extract(epoch FROM triaged_at - submitted_at) / 86400 AS days FROM firsts
     WHERE triaged_at::date BETWEEN $1 AND $2 AND submitted_at IS NOT NULL`, [start, end])).rows.map((x) => Number(x.days));
-  const fromGaps = (await c.query("SELECT count(*)::int AS n FROM idea WHERE source_gap_id IS NOT NULL")).rows[0].n;
+  const fromGaps = (await c.query("SELECT count(*)::int AS n FROM idea WHERE source_gap_id IS NOT NULL OR origin IN ('engine','claude')")).rows[0].n;
 
   // ---- Portfolio ------------------------------------------------------------------
   const stages = (await c.query("SELECT stage, count(*)::int AS projects FROM project GROUP BY stage ORDER BY stage")).rows;
@@ -83,23 +83,18 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
   const applicable = indicators.filter((i) => i.status !== "not_applicable");
   const completeness = applicable.length ? r2((100 * applicable.filter((i) => ["verified", "suppressed"].includes(i.status as string)).length) / applicable.length) : null;
 
-  // ---- Research intelligence from hospital data -------------------------------------
-  const analysis = (await c.query(`SELECT id, period_from, period_to, sha256, results->'summary' AS summary, results->'conditions' AS conditions
-    FROM analysis_run WHERE period_to <= $1 ORDER BY period_to DESC, created_at DESC LIMIT 1`, [period])).rows[0];
-  let intelligence: Record<string, unknown> | null = null;
-  if (analysis) {
-    const conditions = (analysis.conditions as any[]).slice(0, 8).map((x) => x.cases < small
-      ? { condition_code: x.condition_code, condition_label: x.condition_label, status: "suppressed" }
-      : { condition_code: x.condition_code, condition_label: x.condition_label, cases: x.cases, share_percent: r2(x.share * 100),
-          mortality_percent: x.mortality && x.mortality.events >= small && x.mortality.n - x.mortality.events >= small ? r2(x.mortality.rate * 100) : null });
-    const gaps = (await c.query(`SELECT title, gap_type, study_category, priority_score::float8 AS priority_score, status FROM research_gap
-      WHERE analysis_id = $1 AND status = 'confirmed' ORDER BY priority_score DESC, title LIMIT 10`, [analysis.id])).rows;
-    const pending = (await c.query("SELECT count(*)::int AS n FROM research_gap WHERE analysis_id = $1 AND status = 'proposed'", [analysis.id])).rows[0].n;
-    const byType = (await c.query("SELECT gap_type, count(*)::int AS n FROM research_gap WHERE analysis_id = $1 GROUP BY gap_type ORDER BY gap_type", [analysis.id])).rows;
-    intelligence = { analysis_id: analysis.id, analysis_sha256: analysis.sha256, covers: `${analysis.period_from} to ${analysis.period_to}`,
-      total_cases: analysis.summary.total_cases, top_conditions: conditions, confirmed_gaps: gaps, gaps_awaiting_review: pending, gaps_by_type: byType,
-      ideas_from_gaps: fromGaps };
-  }
+  // ---- Research from InnovaStat: only what has been released to the hospital ---------------
+  const releasedReports = (await c.query(`SELECT kind, count(*)::int AS n FROM client_report
+    WHERE status IN ('released','hospital_approved','hospital_returned','superseded') AND released_at::date <= $1 GROUP BY kind ORDER BY kind`, [end])).rows;
+  const ideasReleased = (await c.query(`SELECT p.title, p.study_category, p.status, p.priority::float8 AS priority FROM proposal p
+    WHERE p.status IN ('released','approved','declined') ORDER BY p.priority DESC, p.title LIMIT 15`)).rows;
+  const awaiting = ideasReleased.filter((x) => x.status === "released").length;
+  const resultsAwaiting = (await c.query("SELECT count(*)::int AS n FROM client_report WHERE kind = 'results' AND status = 'released'")).rows[0].n;
+  const manuscripts = (await c.query("SELECT status, count(*)::int AS n FROM manuscript WHERE status IN ('sent','hospital_accepted','hospital_returned') GROUP BY status ORDER BY status")).rows;
+  const intelligence = releasedReports.length || ideasReleased.length ? {
+    reports_released: releasedReports, ideas: ideasReleased, ideas_awaiting_decision: awaiting,
+    ideas_approved: ideasReleased.filter((x) => x.status === "approved").length, results_awaiting_approval: resultsAwaiting, manuscripts,
+  } : null;
 
   // ---- Risks ---------------------------------------------------------------------
   const onHold = (await c.query("SELECT id, title, pi, hold_reason FROM project WHERE stage = 'on_hold' ORDER BY title")).rows;
@@ -118,8 +113,8 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
   for (const i of indicators) if (["missing", "unverified", "returned"].includes(i.status as string))
     actions.push({ action: `${i.status === "missing" ? "Submit" : i.status === "returned" ? "Correct and resubmit" : "Verify"} ${i.name} for ${i.department}`,
       owner: i.status === "unverified" ? "Indicator verifier" : `${i.department} data steward`, due_date: addDays(end, 10), status: "open", source: `indicator:${i.code}` });
-  if (intelligence && (intelligence.gaps_awaiting_review as number) > 0)
-    actions.push({ action: `Review ${intelligence.gaps_awaiting_review} proposed research gaps`, owner: "InnovaStat reviewer", due_date: addDays(end, 14), status: "open", source: "gaps" });
+  if (awaiting > 0) actions.push({ action: `Decide on ${n(awaiting, "research idea")} from InnovaStat`, owner: "Research director", due_date: addDays(end, 14), status: "open", source: "proposals" });
+  if (resultsAwaiting > 0) actions.push({ action: `Review ${n(resultsAwaiting, "study results report")}`, owner: "Research director", due_date: addDays(end, 14), status: "open", source: "results" });
   for (const p of onHold) actions.push({ action: `Resolve hold on "${p.title}"`, owner: "Principal investigator", due_date: due, status: "open", source: `project:${p.id}` });
   for (const m of overdue) actions.push({ action: `Complete overdue milestone "${m.title}" (${m.project})`, owner: "Milestone owner", due_date: addDays(end, 14), status: "open", source: "milestone" });
   for (const e of expiring) actions.push({ action: `Renew ${e.kind} approval for "${e.title}" (expires ${e.expiry_date})`, owner: "Governance recorder", due_date: e.expiry_date < due ? e.expiry_date : due, status: "open", source: "governance" });
@@ -132,7 +127,7 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
     `${n(active, "project")} active at cutoff; ${activated} activated during ${period}.`,
     `${n(ideasTotal, "research idea")} in the pipeline${fromGaps ? `, ${fromGaps} generated from hospital-data research gaps` : ""}.`,
     verified.length ? `${withTarget.filter((i) => i.meets_target).length} of ${n(withTarget.length, "verified indicator")} met target; indicator completeness ${completeness}%.` : `No verified quality indicators for ${period}.`,
-    intelligence ? `Hospital data (${intelligence.covers}, ${intelligence.total_cases} cases) yielded ${n((intelligence.confirmed_gaps as unknown[]).length, "confirmed research gap")}; ${intelligence.gaps_awaiting_review} awaiting review.` : "No hospital-data analysis covers this period yet.",
+    intelligence ? `InnovaStat has suggested ${n(ideasReleased.length, "research idea")} from hospital data: ${intelligence.ideas_approved} approved, ${awaiting} awaiting a decision.` : "No InnovaStat research report has been released yet.",
     `${n(onHold.length, "project")} on hold, ${n(overdue.length, "overdue milestone")}, ${n(expiring.length, "approval")} expiring within 60 days.`,
   ];
 

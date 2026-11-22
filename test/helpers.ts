@@ -10,6 +10,7 @@ import { buildRouter } from "../src/api.ts";
 import { localAuth } from "../src/auth.ts";
 import { LocalObjectStore } from "../src/storage.ts";
 import type { IdeaDrafter } from "../src/analytics/ideas.ts";
+import type { StudyAgent } from "../src/studies/agent.ts";
 
 export const ISSUER = "https://idp.test.invalid/";
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -21,13 +22,13 @@ export function freshDatabase(name: string) {
   return { ownerSql, webUrl: `postgres://ih_web:ih_web_local@127.0.0.1:5432/${name}` };
 }
 
-export async function harness(dbName: string, opts: { drafter?: IdeaDrafter | null } = {}) {
+export async function harness(dbName: string, opts: { drafter?: IdeaDrafter | null; agent?: StudyAgent | null } = {}) {
   const db = freshDatabase(dbName);
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk = { ...(await exportJWK(publicKey)), kid: "k1", alg: "RS256", use: "sig" };
   const pool = createPool(db.webUrl, 5);
   const store = new LocalObjectStore(mkdtempSync(join(tmpdir(), "ih-store-")));
-  const router = buildRouter({ pool, auth: localAuth(ISSUER, "innovahospital-test", { keys: [jwk] }), reports: { store, synthetic: true }, data: { drafter: opts.drafter ?? null } });
+  const router = buildRouter({ pool, auth: localAuth(ISSUER, "innovahospital-test", { keys: [jwk] }), reports: { store, synthetic: true }, data: { drafter: opts.drafter ?? null }, studies: { agent: opts.agent ?? null, deidKey: "test-deid-key" } });
   const server = createServer(router.handle);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -37,8 +38,9 @@ export async function harness(dbName: string, opts: { drafter?: IdeaDrafter | nu
   async function api(sub: string | null, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) {
     const h: Record<string, string> = { ...headers };
     if (sub) h.authorization = `Bearer ${await token(sub)}`;
-    if (body !== undefined) h["content-type"] = "application/json";
-    const res = await fetch(base + path, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    const isFile = Buffer.isBuffer(body);
+    if (body !== undefined && !isFile) h["content-type"] = "application/json";
+    const res = await fetch(base + path, { method, headers: h, body: body === undefined ? undefined : isFile ? new Uint8Array(body as Buffer) : JSON.stringify(body) });
     const type = res.headers.get("content-type") ?? "";
     if (type.startsWith("application/pdf")) return { status: res.status, body: null as any, bytes: Buffer.from(await res.arrayBuffer()) };
     return { status: res.status, body: (res.status === 204 ? null : await res.json()) as any, bytes: null as Buffer | null };

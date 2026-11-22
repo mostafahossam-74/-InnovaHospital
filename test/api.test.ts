@@ -17,6 +17,7 @@ before(async () => {
     director: [["research_director", null]],
     coordinator: [["coordinator", null]],
     reviewer: [["innovastat_reviewer", null]],
+    analyst: [["innovastat_analyst", null]],
     steward: [["data_steward", null]],
     cardio_steward: [["data_steward", "cardio"]],
     pi: [["investigator", "cardio"]],
@@ -54,7 +55,9 @@ test("uploads: department scope, independent verification", async () => {
   assert.equal(pu.status, 201);
   paramUpload = pu.body.id;
   // Analysis without verified data fails.
-  assert.equal((await h.api("coordinator", "POST", P("/analyses"), { period_from: "2025-11", period_to: "2026-10" })).status, 422);
+  assert.equal((await h.api("analyst", "POST", P("/analyses"), { period_from: "2025-11", period_to: "2026-10" })).status, 422);
+  // The hospital cannot run or read analyses: they are InnovaStat-internal until reported.
+  assert.equal((await h.api("coordinator", "POST", P("/analyses"), { period_from: "2025-11", period_to: "2026-10" })).status, 403);
   // The submitter cannot verify their own upload.
   assert.equal((await h.api("steward", "POST", P(`/uploads/${caseUpload}/verify`), { decision: "verified", expected_version: 1 })).status, 403);
   assert.equal((await h.api("reviewer", "POST", P(`/uploads/${caseUpload}/verify`), { decision: "verified", expected_version: 2 })).status, 409);
@@ -64,11 +67,13 @@ test("uploads: department scope, independent verification", async () => {
 
 let gapId: string, analysisId: string;
 test("analysis finds research gaps; reviewer other than the analyst decides them", async () => {
-  const a = await h.api("coordinator", "POST", P("/analyses"), { period_from: "2025-11", period_to: "2026-10" });
+  const a = await h.api("analyst", "POST", P("/analyses"), { period_from: "2025-11", period_to: "2026-10" });
   assert.equal(a.status, 201, JSON.stringify(a.body));
   analysisId = a.body.id;
   assert.ok(a.body.gaps >= 10);
-  const full = await h.api("pi", "GET", P(`/analyses/${analysisId}`));
+  assert.equal((await h.api("pi", "GET", P(`/analyses/${analysisId}`))).status, 403);
+  assert.equal((await h.api("director", "GET", P("/gaps"))).status, 403);
+  const full = await h.api("reviewer", "GET", P(`/analyses/${analysisId}`));
   assert.equal(full.body.results.summary.departments.length, 4);
   assert.match(full.body.sha256, /^[0-9a-f]{64}$/);
   const gaps = (await h.api("reviewer", "GET", P("/gaps"))).body.items;
@@ -77,24 +82,25 @@ test("analysis finds research gaps; reviewer other than the analyst decides them
   const econ = gaps.find((g: any) => g.gap_type === "cost_effectiveness");
   gapId = econ.id;
   // Ideas need a confirmed gap.
-  assert.equal((await h.api("coordinator", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio })).status, 409);
-  // The analyst cannot confirm the gaps of their own analysis; reviewers can.
-  assert.equal((await h.api("coordinator", "POST", P(`/gaps/${gapId}/decision`), { status: "confirmed", reason: "ok", expected_version: 1 })).status, 403);
+  assert.equal((await h.api("analyst", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio })).status, 409);
+  // Only the statistician confirms gaps.
+  assert.equal((await h.api("analyst", "POST", P(`/gaps/${gapId}/decision`), { status: "confirmed", reason: "ok", expected_version: 1 })).status, 403);
   const d = await h.api("reviewer", "POST", P(`/gaps/${gapId}/decision`), { status: "confirmed", reason: "Material cost difference; no local evaluation", expected_version: 1 });
   assert.equal(d.status, 200);
-  assert.equal((await h.api("director", "POST", P(`/gaps/${gapId}/decision`), { status: "rejected", reason: "x", expected_version: 1 })).status, 409);
+  assert.equal((await h.api("reviewer", "POST", P(`/gaps/${gapId}/decision`), { status: "rejected", reason: "x", expected_version: 1 })).status, 409);
 });
 
 let ideaId: string;
-test("research idea from a gap, triage and atomic conversion", async () => {
-  // Claude drafting without a configured drafter → 503; templates always work.
-  assert.equal((await h.api("coordinator", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio, mode: "claude" })).status, 503);
-  // An ICU investigator cannot create an idea in cardiology.
-  assert.equal((await h.api("icu_pi", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio })).status, 403);
-  const i = await h.api("pi", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio });
+test("research idea: clinician intake, triage and atomic conversion", async () => {
+  // Gap-based drafting is InnovaStat-internal; clinicians propose ideas through intake.
+  assert.equal((await h.api("analyst", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio, mode: "claude" })).status, 503);
+  const fromGap = await h.api("analyst", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio });
+  assert.equal(fromGap.body.study_category, "health_economics");
+  assert.equal((await h.api("pi", "POST", P(`/gaps/${gapId}/ideas`), { department_id: dept.cardio })).status, 403);
+  assert.equal((await h.api("icu_pi", "POST", P("/ideas"), { department_id: dept.cardio, title: "x", research_question: "q", rationale: "r", design: "d", study_category: "health_economics", population: "p", data_sources: "s" })).status, 403);
+  const i = await h.api("pi", "POST", P("/ideas"), { department_id: dept.cardio, title: "Cost-effectiveness of primary PCI", research_question: "Is PCI cost-effective?",
+    rationale: "Large cost difference", design: "Cost-effectiveness analysis", study_category: "health_economics", population: "AMI patients", data_sources: "HIS", condition_codes: ["I21"] });
   assert.equal(i.status, 201, JSON.stringify(i.body));
-  assert.equal(i.body.study_category, "health_economics");
-  assert.match(i.body.title, /Cost-effectiveness/);
   ideaId = i.body.id;
   assert.equal((await h.api("icu_pi", "GET", P(`/ideas/${ideaId}`))).status, 404);
   assert.equal((await h.api("pi", "POST", P(`/ideas/${ideaId}/transition`), { target: "submitted", expected_version: 1 })).status, 200);
@@ -185,7 +191,7 @@ test("monthly report: snapshot, separation of duties, freshness, release, downlo
   assert.equal(ind.ONCO.numerator, undefined);
   assert.equal(ind.GIM.status, "not_applicable");
   assert.equal(ind.ICU.status, "missing");
-  assert.ok(rep.snapshot.research_intelligence.confirmed_gaps.length >= 1);
+  assert.equal(rep.snapshot.research_intelligence, null); // nothing released by InnovaStat yet, so nothing internal shows
   assert.ok(rep.snapshot.actions.some((a: any) => /ICU/.test(a.action)));
   assert.ok(rep.snapshot.risks.on_hold.length === 1);
   // Executive readers cannot see drafts.

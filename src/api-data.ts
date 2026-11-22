@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Client } from "./db.ts";
 import { audit, sha256 } from "./db.ts";
 import { ApiError } from "./http.ts";
-import { actorId, can, departmentScope, STAFF } from "./auth.ts";
+import { actorId, can, departmentScope, INTERNAL, STAFF } from "./auth.ts";
 import type { Role, WorkspaceAccess } from "./auth.ts";
 import { conflict, forbidden, idParam, notFound, period, text, uuid, version, W } from "./api-common.ts";
 import type { RouteDeps } from "./api-common.ts";
@@ -17,11 +17,13 @@ import type { GapForIdea, IdeaDrafter, IdeaDraft } from "./analytics/ideas.ts";
 
 export type DataDeps = { drafter: IdeaDrafter | null };
 
-const SUBMITTERS: Role[] = ["data_steward", "coordinator"];
-const VERIFIERS: Role[] = ["data_steward", "innovastat_reviewer", "research_director"];
-const ANALYSTS: Role[] = ["coordinator", "innovastat_reviewer", "research_director"];
-const GAP_DECIDERS: Role[] = ["innovastat_reviewer", "research_director"];
-const IDEA_MAKERS: Role[] = ["coordinator", "investigator", "innovastat_reviewer", "research_director", "department_lead"];
+// The hospital supplies aggregate data; InnovaStat verifies and analyses it.
+// Analyses and gaps stay internal until InnovaStat releases a report.
+const SUBMITTERS: Role[] = ["data_steward", "coordinator", "innovastat_analyst"];
+const VERIFIERS: Role[] = ["innovastat_reviewer", "innovastat_analyst"];
+const ANALYSTS: Role[] = ["innovastat_analyst", "innovastat_reviewer"];
+const GAP_DECIDERS: Role[] = ["innovastat_reviewer"];
+const IDEA_MAKERS: Role[] = ["innovastat_analyst", "innovastat_reviewer"];
 const MAX_ROWS = 20000;
 
 const count = z.number().int().min(0).max(10_000_000);
@@ -95,16 +97,17 @@ export function registerDataRoutes({ r, scoped }: RouteDeps, deps: DataDeps) {
     return { status: 201, body: { id, row_count: b.rows.length, period_from: periods[0], period_to: periods.at(-1), status: "submitted" } };
   }));
 
-  r.on("GET", `${W}/uploads`, (ctx) => scoped(ctx, STAFF, async (c) => {
+  r.on("GET", `${W}/uploads`, (ctx) => scoped(ctx, [...SUBMITTERS, ...VERIFIERS], async (c, me, _ws, access) => {
+    const internal = INTERNAL.some((x) => access.roles.has(x));
     const { rows } = await c.query(`SELECT u.id, u.kind, u.label, u.source_method, u.evidence_reference, u.period_from, u.period_to, u.row_count,
         u.sha256, u.status, u.submitted_by, u.verified_by, u.verified_at, u.review_note, u.version, u.created_at,
         (SELECT array_agg(DISTINCT d.name ORDER BY d.name) FROM department d WHERE d.id IN (
            SELECT department_id FROM case_aggregate WHERE upload_id = u.id UNION SELECT department_id FROM parameter_observation WHERE upload_id = u.id)) AS departments
-      FROM data_upload u ORDER BY u.created_at DESC LIMIT 200`);
+      FROM data_upload u WHERE $1 OR u.submitted_by = $2 ORDER BY u.created_at DESC LIMIT 200`, [internal, actorId(me)]);
     return { body: { items: rows } };
   }));
 
-  r.on("GET", `${W}/uploads/{id}`, (ctx) => scoped(ctx, STAFF, async (c) => {
+  r.on("GET", `${W}/uploads/{id}`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
     const id = idParam(ctx);
     const u = (await c.query("SELECT * FROM data_upload WHERE id = $1", [id])).rows[0];
     if (!u) throw notFound("Upload");
@@ -190,21 +193,21 @@ export function registerDataRoutes({ r, scoped }: RouteDeps, deps: DataDeps) {
     return { status: 201, body: { id, summary: results.summary, gaps: gaps.length } };
   }));
 
-  r.on("GET", `${W}/analyses`, (ctx) => scoped(ctx, STAFF, async (c) => {
+  r.on("GET", `${W}/analyses`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
     const { rows } = await c.query(`SELECT a.id, a.period_from, a.period_to, a.engine_version, a.sha256, a.created_by, a.created_at,
         a.results->'summary' AS summary, (SELECT count(*)::int FROM research_gap g WHERE g.analysis_id = a.id) AS gaps
       FROM analysis_run a ORDER BY a.created_at DESC LIMIT 100`);
     return { body: { items: rows } };
   }));
 
-  r.on("GET", `${W}/analyses/{id}`, (ctx) => scoped(ctx, STAFF, async (c) => {
+  r.on("GET", `${W}/analyses/{id}`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
     const a = (await c.query("SELECT * FROM analysis_run WHERE id = $1", [idParam(ctx)])).rows[0];
     if (!a) throw notFound("Analysis");
     return { body: a };
   }));
 
   // ---- Research gaps --------------------------------------------------------------
-  r.on("GET", `${W}/gaps`, (ctx) => scoped(ctx, STAFF, async (c) => {
+  r.on("GET", `${W}/gaps`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
     const status = ctx.query.get("status"), analysis = ctx.query.get("analysis_id"), type = ctx.query.get("gap_type");
     const latest = ctx.query.get("latest") !== "false";
     const { rows } = await c.query(`SELECT g.*, d.name AS department,
@@ -216,7 +219,7 @@ export function registerDataRoutes({ r, scoped }: RouteDeps, deps: DataDeps) {
     return { body: { items: rows } };
   }));
 
-  r.on("GET", `${W}/gaps/{id}`, (ctx) => scoped(ctx, STAFF, async (c) => {
+  r.on("GET", `${W}/gaps/{id}`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
     const g = (await c.query("SELECT g.*, d.name AS department FROM research_gap g LEFT JOIN department d ON d.id = g.department_id WHERE g.id = $1", [idParam(ctx)])).rows[0];
     if (!g) throw notFound("Gap");
     g.ideas = (await c.query("SELECT id, title, status, origin, created_at FROM idea WHERE source_gap_id = $1 ORDER BY created_at", [g.id])).rows;
