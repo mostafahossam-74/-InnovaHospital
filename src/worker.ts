@@ -4,8 +4,12 @@
 import { createPool } from "./db.ts";
 import { env } from "./config.ts";
 import { tick } from "./scheduler.ts";
+import { appBaseUrl, mailerFromEnv } from "./notifications.ts";
 
 const pool = createPool(env("DATABASE_URL"), 3);
+// Email: MAIL_TRANSPORT (only "log" until a provider is configured) and APP_BASE_URL for links.
+const mailer = mailerFromEnv();
+const baseUrl = appBaseUrl();
 const everyMs = Number(env("SCHEDULER_INTERVAL_SECONDS", "60")) * 1000;
 if (!Number.isFinite(everyMs) || everyMs < 1000) throw new Error("SCHEDULER_INTERVAL_SECONDS must be at least 1");
 
@@ -17,9 +21,10 @@ let running: Promise<void> = Promise.resolve();
 
 async function pass() {
   try {
-    const { queued, ran } = await tick(pool);
+    const { queued, ran, sent } = await tick(pool, new Date(), { mailer, baseUrl });
     if (queued) log("info", "jobs queued", { queued });
     for (const j of ran) log(j.outcome === "done" ? "info" : "warn", `job ${j.outcome}`, { workspace: j.workspace_id, kind: j.kind, key: j.job_key, error: j.error });
+    for (const n of sent) log(n.outcome === "sent" ? "info" : "warn", `notification ${n.outcome}`, { workspace: n.workspace_id, id: n.id, kind: n.kind, error: n.error });
   } catch (err) {
     log("error", "scheduler pass failed", { error: err instanceof Error ? err.message : String(err) });
   }

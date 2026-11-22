@@ -17,6 +17,8 @@ import { audit, withTenant } from "./db.ts";
 import { duePeriod, localDate } from "./period.ts";
 import { draftReport } from "./api-reports.ts";
 import { expirySweep } from "./api-office.ts";
+import { deliverDue, membersWithRoles, notify } from "./notifications.ts";
+import type { Delivery, Mailer } from "./notifications.ts";
 
 export const SCHEDULER_ACTOR = "service:scheduler";
 export const MAX_ATTEMPTS = 5;
@@ -94,6 +96,11 @@ export async function runDue(pool: Pool, now: Date, actions: Record<JobKind, Job
             await c.query(`UPDATE scheduled_job SET status = 'failed', attempts = $4, last_error = $5, finished_at = $6 WHERE ${where}`,
               [job.workspace_id, job.kind, job.job_key, attempts, error, now]);
             await audit(c, job.workspace_id, SCHEDULER_ACTOR, "scheduler.job_failed", "scheduled_job", `${job.kind}:${job.job_key}`, { attempts, error }, correlation(job));
+            await notify(c, job.workspace_id, { kind: "scheduler_job_failed", recipients: await membersWithRoles(c, ["coordinator"]),
+              entityType: "scheduled_job", entityId: `${job.kind}:${job.job_key}`,
+              linkPath: `/#/w/${job.workspace_id}/${job.kind === "report_draft" ? "reports" : "projects"}`,
+              params: { task: job.kind, key: job.job_key, period: job.kind === "report_draft" ? job.job_key : "", attempts: String(attempts) },
+              dedupe: `scheduler_job_failed:${job.kind}:${job.job_key}` });
             return { ...base, outcome: "failed", error };
           }
           const retryAt = new Date(now.getTime() + RETRY_BASE_MS * 2 ** (attempts - 1));
@@ -109,9 +116,12 @@ export async function runDue(pool: Pool, now: Date, actions: Record<JobKind, Job
   return outcomes;
 }
 
-/** One scheduler pass: queue what is due, then run it. */
-export async function tick(pool: Pool, now = new Date(), actions: Record<JobKind, JobAction> = ACTIONS) {
+export type TickOptions = { actions?: Record<JobKind, JobAction>; mailer?: Mailer; baseUrl?: string };
+
+/** One scheduler pass: queue what is due, run it, then send due notifications (when given a mailer). */
+export async function tick(pool: Pool, now = new Date(), opts: TickOptions = {}) {
   const queued = await enqueueDue(pool, now);
-  const ran = await runDue(pool, now, actions);
-  return { queued, ran };
+  const ran = await runDue(pool, now, opts.actions ?? ACTIONS);
+  const sent: Delivery[] = opts.mailer ? await deliverDue(pool, now, opts.mailer, opts.baseUrl ?? "") : [];
+  return { queued, ran, sent };
 }

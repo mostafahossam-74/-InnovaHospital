@@ -47,7 +47,7 @@ Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set befor
 Tests (each test file creates its own database; GitHub Actions runs them, the type checks and the web build on every pull request and push to `main`, see `.github/workflows/test.yml`):
 
 ```bash
-npm test          # 50 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
+npm test          # 58 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
 npm run typecheck && (cd web && npx tsc -b)
 ```
 
@@ -124,6 +124,22 @@ A grant can apply to all departments or to one department, with an optional end 
 
 Jobs are kept in `scheduled_job`, one per hospital, kind and month or day, so each runs once even with several workers. A job and its effects commit in one transaction. A failing job is rolled back and retried after 5, 10, 20 and 40 minutes; after the fifth failure it is marked `failed` and recorded in the audit log, and a person handles that month (for example with "Draft report").
 
+### Notifications
+
+Events queue a notice in the same transaction, one per recipient, and the worker emails them on each pass:
+
+| Event | Who is told |
+|---|---|
+| A report is drafted (by a person or the scheduler) | InnovaStat reviewers (research directors if there are none), not the author |
+| A report is approved | Research directors, who release it |
+| A report is returned | Its author; for a scheduler draft, the coordinators |
+| A project is put on hold | Its PI and the coordinators for its department |
+| A scheduled job fails for good | Coordinators |
+
+An email says what needs doing and links to the portal; it never contains report figures or governance details. The address is looked up when the email is sent, from the person's active membership, so revoked access stops further mail and a member without an address is skipped. A failed send is retried after 5, 10, 20 and 40 minutes, then marked failed. Delivery is at least once: a crash between sending and recording can repeat one email, never lose one. Notices are kept in `notification`.
+
+Only the `log` transport exists until an email provider is chosen; a provider plugs in behind the `Mailer` interface in `src/notifications.ts`.
+
 ## Database migrations
 
 `npm run db:migrate` applies the files in `db/migrations/` that a database has not had yet, in order, each in its own transaction, and records them in `schema_migration`. Run it on every deploy, before the API starts, with the owner's connection:
@@ -153,5 +169,7 @@ MIGRATION_DATABASE_URL='postgres://owner:…@host:5432/innovahospital' npm run d
 | `SYNTHETIC_DATA=true` | Watermarks PDFs as synthetic |
 | `CORS_ORIGINS`, `WEB_DIST_DIR`, `PORT` | Hosting |
 | `SCHEDULER_INTERVAL_SECONDS` | How often the scheduler worker checks for due jobs (default 60) |
+| `MAIL_TRANSPORT` | How the worker sends notification email. Only `log` exists for now (writes each email to the log, sends nothing); required in production |
+| `APP_BASE_URL` | The portal's origin, for the sign-in links in emails, e.g. `https://research.hospital.example`; required in production |
 
 The agent never receives patient rows, only column profiles, summaries and result tables. Even so, enable it for a hospital only after the hospital approves the provider and the processing location.

@@ -10,6 +10,7 @@ import { forbidden, idempotent, idParam, notFound, period, text, W } from "./api
 import type { RouteDeps } from "./api-common.ts";
 import { buildSnapshot } from "./reports/snapshot.ts";
 import { renderPdf } from "./reports/pdf.ts";
+import { membersWithRoles, notify } from "./notifications.ts";
 import type { ObjectStore } from "./storage.ts";
 
 export type ReportDeps = { store: ObjectStore; synthetic?: boolean };
@@ -23,6 +24,10 @@ export async function draftReport(c: Client, wsId: string, period: string, actor
   const id = (await c.query("INSERT INTO report_revision (workspace_id, period, revision, snapshot, digest, author) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
     [wsId, period, revision, snapshot, digest, actor])).rows[0].id;
   await audit(c, wsId, actor, "report.draft", "report_revision", id, { period, revision }, correlationId);
+  // InnovaStat reviewers review drafts; without any, the research director can.
+  const reviewers = await membersWithRoles(c, ["innovastat_reviewer"]);
+  await notify(c, wsId, { kind: "report_review_needed", recipients: reviewers.length ? reviewers : await membersWithRoles(c, ["research_director"]),
+    exclude: [actor], entityType: "report_revision", entityId: id, linkPath: `/#/w/${wsId}/reports/${id}`, params: { period }, dedupe: `report_review_needed:${id}` });
   return { id, period, revision, digest };
 }
 
@@ -63,6 +68,16 @@ export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps)
     await c.query("UPDATE report_revision SET status = $2, reviewer = $3, review_note = $4, reviewed_at = now() WHERE id = $1",
       [rep.id, b.decision === "approve" ? "approved" : "returned", actorId(me), b.note ?? null]);
     await audit(c, wsId, actorId(me), b.decision === "approve" ? "report.approve" : "report.return", "report_revision", rep.id, { digest: b.digest }, ctx.requestId, b.note);
+    const link = { entityType: "report_revision", entityId: rep.id, linkPath: `/#/w/${wsId}/reports/${rep.id}`, params: { period: rep.period } };
+    if (b.decision === "approve") {
+      // The publisher must differ from author and reviewer.
+      await notify(c, wsId, { kind: "report_release_needed", recipients: await membersWithRoles(c, ["research_director"]),
+        exclude: [rep.author, actorId(me)], ...link, dedupe: `report_release_needed:${rep.id}` });
+    } else {
+      // Back to the author; a draft from the scheduler goes to the coordinators, who draft reports.
+      const recipients = rep.author.startsWith("service:") ? await membersWithRoles(c, ["coordinator"]) : [rep.author];
+      await notify(c, wsId, { kind: "report_returned", recipients, exclude: [actorId(me)], ...link, dedupe: `report_returned:${rep.id}` });
+    }
     return { body: { status: b.decision === "approve" ? "approved" : "returned" } };
   }));
 
