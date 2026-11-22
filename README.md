@@ -47,7 +47,7 @@ Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set befor
 Tests (each test file creates its own database; GitHub Actions runs them, the type checks and the web build on every pull request and push to `main`, see `.github/workflows/test.yml`):
 
 ```bash
-npm test          # 43 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
+npm test          # 44 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
 npm run typecheck && (cd web && npx tsc -b)
 ```
 
