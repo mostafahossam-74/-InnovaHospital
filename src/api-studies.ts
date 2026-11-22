@@ -64,8 +64,10 @@ export function registerStudyRoutes({ r, scoped }: RouteDeps, deps: StudyDeps) {
       if (!parsed.success) problems = parsed.error.issues.slice(0, 10).map((i) => `${i.path.join(".")}: ${i.message}`);
       else { problems = check(parsed.data); if (!problems.length) output = parsed.data as T; }
     }
-    await c.query(`INSERT INTO agent_call (workspace_id, task, subject_id, model, accepted, problems, input_tokens, output_tokens, requested_by)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [wsId, task, subject, a.model, output !== null, problems, a.input_tokens ?? null, a.output_tokens ?? null, actorId(me)]);
+    // Keep what Claude returned when it is turned down, for review; accepted output lives in the row it becomes.
+    const rejected = output === null ? (a.output ?? a.raw ?? null) : null;
+    await c.query(`INSERT INTO agent_call (workspace_id, task, subject_id, model, accepted, problems, input_tokens, output_tokens, requested_by, rejected_output)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [wsId, task, subject, a.model, output !== null, problems, a.input_tokens ?? null, a.output_tokens ?? null, actorId(me), rejected === null ? null : JSON.stringify(rejected)]);
     return { output, problems };
   }
 
@@ -118,13 +120,27 @@ export function registerStudyRoutes({ r, scoped }: RouteDeps, deps: StudyDeps) {
     return { body: { items: rows } };
   }));
 
+  // ---- Agent call log (InnovaStat only): recent calls, and what Claude returned when turned down
+  r.on("GET", `${W}/studies/agent-calls`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
+    const rejectedOnly = ctx.query.get("rejected") === "true";
+    const { rows } = await c.query(`SELECT id, task, subject_id, model, accepted, problems, rejected_output IS NOT NULL AS has_rejected_output,
+      input_tokens, output_tokens, requested_by, created_at FROM agent_call ${rejectedOnly ? "WHERE NOT accepted" : ""} ORDER BY created_at DESC LIMIT 100`);
+    return { body: { items: rows } };
+  }));
+
+  r.on("GET", `${W}/studies/agent-calls/{id}`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
+    const row = (await c.query("SELECT * FROM agent_call WHERE id = $1", [idParam(ctx)])).rows[0];
+    if (!row) throw notFound("Agent call");
+    return { body: row };
+  }));
+
   r.on("GET", `${W}/studies/datasets/{id}`, (ctx) => scoped(ctx, INTERNAL, async (c) => {
     const d = await loadDataset(c, idParam(ctx));
     const [h, plans, results, calls] = await Promise.all([
       c.query("SELECT * FROM study_hypothesis WHERE dataset_id = $1 ORDER BY status = 'rejected', priority DESC, title", [d.id]),
       c.query("SELECT id, hypothesis_id, status, origin, version, sha256, plan->>'title' AS title, created_at, locked_by, locked_at FROM analysis_plan WHERE dataset_id = $1 ORDER BY created_at", [d.id]),
       c.query("SELECT id, plan_id, hypothesis_id, status, run_by, reviewed_by, (results->'primary') AS primary, (results->>'significant')::boolean AS significant, created_at FROM study_result WHERE dataset_id = $1 ORDER BY created_at", [d.id]),
-      c.query("SELECT task, model, accepted, problems, created_at FROM agent_call WHERE subject_id = $1 ORDER BY created_at DESC LIMIT 20", [d.id]),
+      c.query("SELECT id, task, model, accepted, problems, rejected_output IS NOT NULL AS has_rejected_output, created_at FROM agent_call WHERE subject_id = $1 ORDER BY created_at DESC LIMIT 20", [d.id]),
     ]);
     return { body: { ...d, hypotheses: h.rows, plans: plans.rows, results: results.rows, agent_calls: calls.rows, agent_available: Boolean(deps.agent) } };
   }));
@@ -421,8 +437,8 @@ export function registerStudyRoutes({ r, scoped }: RouteDeps, deps: StudyDeps) {
     if (b.mode === "claude") {
       if (!deps.drafter) throw new ApiError(503, "agent_unavailable", "Claude drafting is not configured (set INNOVA_ANTHROPIC_API_KEY)");
       const d2 = await deps.drafter.draft({ ...input, statement: [input.statement, evidence.result].filter(Boolean).join(" ") });
-      await c.query("INSERT INTO agent_call (workspace_id, task, subject_id, model, accepted, problems, requested_by) VALUES ($1,'proposal',$2,$3,$4,$5,$6)",
-        [wsId, src.hypothesis_id ?? src.gap_id, d2.model, Boolean(d2.draft), d2.problems, actorId(me)]);
+      await c.query("INSERT INTO agent_call (workspace_id, task, subject_id, model, accepted, problems, requested_by, rejected_output) VALUES ($1,'proposal',$2,$3,$4,$5,$6,$7)",
+        [wsId, src.hypothesis_id ?? src.gap_id, d2.model, Boolean(d2.draft), d2.problems, actorId(me), d2.draft || d2.rejected == null ? null : JSON.stringify(d2.rejected)]);
       if (d2.draft) { concept = d2.draft; origin = "claude"; } else problems = d2.problems;
     }
     const id = (await c.query(`INSERT INTO proposal (workspace_id, dataset_id, hypothesis_id, result_id, gap_id, department_id, title, concept, evidence, study_category, priority, origin, created_by)

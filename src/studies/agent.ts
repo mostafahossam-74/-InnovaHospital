@@ -14,7 +14,8 @@ export const STUDY_AGENT_MODEL = process.env.STUDY_AGENT_MODEL ?? "claude-opus-5
 export const agentKey = () => process.env.INNOVA_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY || undefined;
 
 export type AgentTask = "dictionary" | "hypotheses" | "plan" | "interpret" | "manuscript";
-export type AgentAttempt = { output: unknown | null; problems: string[]; model: string; input_tokens?: number; output_tokens?: number };
+/** `raw` is the reply text when it was not valid JSON, so the rejected reply can still be saved. */
+export type AgentAttempt = { output: unknown | null; problems: string[]; model: string; input_tokens?: number; output_tokens?: number; raw?: string };
 export interface StudyAgent { run(task: AgentTask, input: unknown): Promise<AgentAttempt> }
 
 // ---- Output schemas -------------------------------------------------------------------
@@ -84,7 +85,7 @@ export class ClaudeStudyAgent implements StudyAgent {
     if (response.stop_reason === "max_tokens") return { output: null, problems: ["output_truncated"], model: STUDY_AGENT_MODEL, ...usage };
     const text = response.content.filter((b: { type: string }) => b.type === "text").map((b: any) => b.text).join("");
     try { return { output: JSON.parse(text), problems: [], model: STUDY_AGENT_MODEL, ...usage }; }
-    catch { return { output: null, problems: ["invalid_json"], model: STUDY_AGENT_MODEL, ...usage }; }
+    catch { return { output: null, problems: ["invalid_json"], model: STUDY_AGENT_MODEL, raw: text, ...usage }; }
   }
 }
 
