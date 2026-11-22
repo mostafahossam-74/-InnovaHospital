@@ -3,6 +3,7 @@
 // Approval and release re-build the snapshot and refuse if any input changed.
 import { z } from "zod";
 import { audit, canonicalJson, sha256 } from "./db.ts";
+import type { Client } from "./db.ts";
 import { ApiError } from "./http.ts";
 import { actorId, ROLES, STAFF } from "./auth.ts";
 import { forbidden, idempotent, idParam, notFound, period, text, W } from "./api-common.ts";
@@ -13,18 +14,23 @@ import type { ObjectStore } from "./storage.ts";
 
 export type ReportDeps = { store: ObjectStore; synthetic?: boolean };
 
+/** Drafts the next revision of a period's report from a fresh snapshot. Called by the
+ *  report-runs route and by the scheduler; review and release stay with people. */
+export async function draftReport(c: Client, wsId: string, period: string, actor: string, correlationId: string) {
+  const snapshot = await buildSnapshot(c, wsId, period);
+  const digest = sha256(canonicalJson(snapshot));
+  const revision = (await c.query("SELECT coalesce(max(revision),0)+1 AS v FROM report_revision WHERE period = $1", [period])).rows[0].v;
+  const id = (await c.query("INSERT INTO report_revision (workspace_id, period, revision, snapshot, digest, author) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
+    [wsId, period, revision, snapshot, digest, actor])).rows[0].id;
+  await audit(c, wsId, actor, "report.draft", "report_revision", id, { period, revision }, correlationId);
+  return { id, period, revision, digest };
+}
+
 export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps) {
   r.on("POST", `${W}/report-runs`, (ctx) => scoped(ctx, ["coordinator"], async (c, me, wsId) => {
     const b = z.object({ period }).strict().parse(await ctx.body());
-    return idempotent(c, ctx, wsId, `report.draft:${b.period}`, async () => {
-      const snapshot = await buildSnapshot(c, wsId, b.period);
-      const digest = sha256(canonicalJson(snapshot));
-      const revision = (await c.query("SELECT coalesce(max(revision),0)+1 AS v FROM report_revision WHERE period = $1", [b.period])).rows[0].v;
-      const id = (await c.query("INSERT INTO report_revision (workspace_id, period, revision, snapshot, digest, author) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
-        [wsId, b.period, revision, snapshot, digest, actorId(me)])).rows[0].id;
-      await audit(c, wsId, actorId(me), "report.draft", "report_revision", id, { period: b.period, revision }, ctx.requestId);
-      return { status: 201, body: { id, period: b.period, revision, digest } };
-    });
+    return idempotent(c, ctx, wsId, `report.draft:${b.period}`, async () =>
+      ({ status: 201, body: await draftReport(c, wsId, b.period, actorId(me), ctx.requestId) }));
   }));
 
   r.on("GET", `${W}/reports`, (ctx) => scoped(ctx, ROLES, async (c, _me, _ws, access) => {
