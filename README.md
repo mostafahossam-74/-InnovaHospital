@@ -47,7 +47,7 @@ Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set befor
 Tests (each test file creates its own database):
 
 ```bash
-npm test          # 39 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
+npm test          # 43 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
 npm run typecheck && (cd web && npx tsc -b)
 ```
 
@@ -115,11 +115,27 @@ A grant can apply to all departments or to one department, with an optional end 
 | `docs/STATUS.md` | Status against the handoff's build order, open items |
 | `reference/`, `contracts/`, `docs/Developer_Handoff.md` | The InnovaStat developer package, unchanged |
 
+## Database migrations
+
+`npm run db:migrate` applies the files in `db/migrations/` that a database has not had yet, in order, each in its own transaction, and records them in `schema_migration`. Run it on every deploy, before the API starts, with the owner's connection:
+
+```bash
+MIGRATION_DATABASE_URL='postgres://owner:…@host:5432/innovahospital' npm run db:migrate
+```
+
+- Re-running is safe: it prints "Up to date." when there is nothing to apply.
+- `--status` lists applied and pending files without changing anything.
+- A database set up by hand before the runner existed has no records, so the runner refuses to start. Run it once with the last file the database already has, for example `--baseline=002_studies.sql`; it records the files up to that one without running them, then applies the rest.
+- It stops if an applied file has been edited since. Add a new migration instead of changing an old one.
+
+`npm run dev:db` and the tests use the same runner.
+
 ## Configuration
 
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | `ih_web` role connection string |
+| `MIGRATION_DATABASE_URL` | Database owner's connection string, used only by `npm run db:migrate`. Never give it to the API |
 | `AUTH_MODE` | `oidc` (default) or `local` (built-in email/password accounts, `LOCAL_AUTH_SECRET`) |
 | `OIDC_ISSUER`, `OIDC_AUDIENCE` | Hospital-approved identity provider |
 | `OBJECT_STORE_DIR` | Private write-once storage for released PDFs (swap for an object store in production) |
