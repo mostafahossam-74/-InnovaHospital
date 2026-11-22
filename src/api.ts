@@ -14,6 +14,7 @@ import { conflict, idParam, makeScoped, notFound, text, version, W, wsParam } fr
 import { registerDataRoutes } from "./api-data.ts";
 import type { DataDeps } from "./api-data.ts";
 import { registerOfficeRoutes } from "./api-office.ts";
+import { registerTrainingRoutes } from "./api-training.ts";
 import { registerReportRoutes } from "./api-reports.ts";
 import type { ReportDeps } from "./api-reports.ts";
 import { registerStudyRoutes } from "./api-studies.ts";
@@ -183,6 +184,7 @@ export function buildRouter({ pool, auth: authConfig, reports, corsOrigins = [],
 
   registerDataRoutes({ r, pool, scoped, identify }, data);
   registerOfficeRoutes({ r, pool, scoped, identify });
+  registerTrainingRoutes({ r, pool, scoped, identify });
   registerReportRoutes({ r, pool, scoped, identify }, reports);
   registerStudyRoutes({ r, pool, scoped, identify }, { ...studies, drafter: data.drafter, store: reports.store, synthetic: reports.synthetic });
   return r;

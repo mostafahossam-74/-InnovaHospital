@@ -4,6 +4,7 @@
 // a fresh build against the stored one.
 import type { Client } from "../db.ts";
 import { gateProblems } from "../api-office.ts";
+import { meetsCompletionRule } from "../api-training.ts";
 import { findLeak, pooledIndicator } from "./disclosure.ts";
 import { parseReportKey } from "../period.ts";
 import type { DepartmentCell, Figure } from "./disclosure.ts";
@@ -54,7 +55,22 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
       count(*) FILTER (WHERE submitted_date BETWEEN $1 AND $2)::int AS submitted_in_period,
       count(*) FILTER (WHERE published_date BETWEEN $1 AND $2)::int AS published_in_period
     FROM research_output GROUP BY output_type ORDER BY output_type`, [start, end])).rows;
-  const training = (await c.query("SELECT coalesce(sum(enrolled),0)::int AS enrolled, coalesce(sum(completed),0)::int AS completed FROM training_cohort WHERE start_date <= $1", [end])).rows[0];
+  // Training completion (Handoff §5 KPI): people meeting their cohort's completion rule, divided by the
+  // eligible people: enrolled, not withdrawn, in cohorts that ended during the report's months.
+  // Cohorts recorded before person records count with the numbers entered for them.
+  const cohorts = (await c.query(`SELECT c.*, (SELECT count(*) FROM training_enrollment e WHERE e.cohort_id = c.id)::int AS records
+    FROM training_cohort c WHERE c.end_date BETWEEN $1 AND $2 ORDER BY c.end_date, c.title`, [start, end])).rows;
+  const trainees = cohorts.length ? (await c.query("SELECT cohort_id, state, attended_sessions, score FROM training_enrollment WHERE state <> 'withdrawn' AND cohort_id = ANY($1)",
+    [cohorts.map((x) => x.id)])).rows : [];
+  const trainingCohorts = cohorts.map((co) => {
+    if (!co.records) return { title: co.title, end_date: co.end_date, source: "counts", eligible: co.enrolled, completed: co.completed, awaiting_decision: null };
+    const mine = trainees.filter((t) => t.cohort_id === co.id);
+    return { title: co.title, end_date: co.end_date, source: "records", eligible: mine.length,
+      completed: mine.filter((t) => meetsCompletionRule(co, t).meets).length,
+      awaiting_decision: mine.filter((t) => !["completed", "incomplete"].includes(t.state)).length };
+  });
+  const sumOf = (k: "eligible" | "completed" | "awaiting_decision") => trainingCohorts.reduce((s, x) => s + (x[k] ?? 0), 0);
+  const training = { cohorts_ended: trainingCohorts.length, eligible: sumOf("eligible"), completed: sumOf("completed"), awaiting_decision: sumOf("awaiting_decision"), cohorts: trainingCohorts };
   const partnerships = (await c.query(`SELECT stage, currency, count(*)::int AS n, coalesce(sum(amount),0)::float8 AS value FROM partnership
     GROUP BY stage, currency ORDER BY stage, currency`)).rows;
 
@@ -175,6 +191,8 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
   if (resultsAwaiting > 0) actions.push({ action: `Review ${n(resultsAwaiting, "study results report")}`, owner: "Research director", due_date: addDays(end, 14), status: "open", source: "results" });
   for (const p of onHold) actions.push({ action: `Resolve hold on "${p.title}"`, owner: "Principal investigator", due_date: due, status: "open", source: `project:${p.id}` });
   for (const m of overdue) actions.push({ action: `Complete overdue milestone "${m.title}" (${m.project})`, owner: "Milestone owner", due_date: addDays(end, 14), status: "open", source: "milestone" });
+  for (const t of trainingCohorts) if (t.awaiting_decision) actions.push({ action: `Record completion decisions for ${n(t.awaiting_decision, "person", "people")} in "${t.title}"`,
+    owner: "Training manager", due_date: addDays(end, 14), status: "open", source: "training" });
   for (const e of expiring) actions.push({ action: `Renew ${e.kind} approval for "${e.title}" (expires ${e.expiry_date})`, owner: "Governance recorder", due_date: e.expiry_date < due ? e.expiry_date : due, status: "open", source: "governance" });
 
   const verified = indicators.filter((i) => i.status === "verified");
@@ -195,14 +213,14 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
     funnel: { ideas_by_status: ideaCounts, triaged_in_period: triage.length, median_triage_days: triage.length ? r2(median(triage)!) : null, ideas_from_gaps: fromGaps },
     portfolio: { by_stage: stages, activated_in_period: activated, by_category: byCategory },
     milestones: { due_in_period: ms.length, completed_on_time: onTime, on_time_rate_percent: ms.length ? r2((100 * onTime) / ms.length) : null, overdue_unresolved: overdue.length },
-    outputs, training: { ...training, completion_percent: training.enrolled ? r2((100 * training.completed) / training.enrolled) : null },
+    outputs, training: { ...training, enrolled: training.eligible, completion_percent: training.eligible ? r2((100 * training.completed) / training.eligible) : null },
     partnerships, indicators, indicator_totals: indicatorTotals, indicator_completeness_percent: completeness,
     research_intelligence: intelligence,
     risks: { on_hold: onHold.map((p) => ({ project: p.title, reason: p.hold_reason })), approvals_expiring: expiring, approval_problems: gateRisks },
     actions,
     limitations: [
       "Aggregate data only: no patient-level records are held. Associations from hospital data are unadjusted and do not show causation.",
-      `Cells with fewer than ${small} events or non-events are suppressed. A hospital-wide total is also suppressed when subtracting the shown departments would reveal such a cell.`,
+      `Cells with fewer than ${small} events or non-events are suppressed. A figure is also suppressed when subtracting other figures, in this report or in reports already released, would reveal such a cell.`,
       "Missing, unverified, not-applicable and suppressed values are excluded from target comparisons.",
     ],
   };

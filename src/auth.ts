@@ -11,13 +11,13 @@ export type Identity = {
 export const actorId = (id: Identity): string => `${id.issuer}|${id.subject}`;
 
 export type Role = "hospital_admin" | "research_director" | "department_lead" | "investigator" | "coordinator"
-  | "governance_recorder" | "data_steward" | "innovastat_reviewer" | "innovastat_analyst" | "executive_reader";
+  | "governance_recorder" | "data_steward" | "innovastat_reviewer" | "innovastat_analyst" | "executive_reader" | "training_manager";
 export const ROLES: Role[] = ["hospital_admin", "research_director", "department_lead", "investigator", "coordinator",
-  "governance_recorder", "data_steward", "innovastat_reviewer", "innovastat_analyst", "executive_reader"];
+  "governance_recorder", "data_steward", "innovastat_reviewer", "innovastat_analyst", "executive_reader", "training_manager"];
 /** InnovaStat staff: the analyst runs the agent, the reviewer is the statistician. Their work is invisible to the hospital until released. */
 export const INTERNAL: Role[] = ["innovastat_analyst", "innovastat_reviewer"];
 /** Hospital roles. */
-export const HOSPITAL: Role[] = ["hospital_admin", "research_director", "department_lead", "investigator", "coordinator", "governance_recorder", "data_steward", "executive_reader"];
+export const HOSPITAL: Role[] = ["hospital_admin", "research_director", "department_lead", "investigator", "coordinator", "governance_recorder", "data_steward", "executive_reader", "training_manager"];
 /** Everyone who works in the research office (all roles except the executive reader). */
 export const STAFF: Role[] = ROLES.filter((r) => r !== "executive_reader");
 
