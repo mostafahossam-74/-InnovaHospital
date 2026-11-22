@@ -93,9 +93,16 @@ export class ClaudeStudyAgent implements StudyAgent {
 const NUM_RE = /-?\d[\d,]*(?:\.\d+)?/g;
 const numbers = (s: string) => (s.match(NUM_RE) ?? []).map((x) => Number(x.replaceAll(",", ""))).filter(Number.isFinite);
 /** Numbers stated in `text` that do not occur in `source` (in any common rounding or as a percentage). */
-/** Wording allowed without a source number: the "p < 0.001" reporting threshold and hash names
- *  such as SHA-256 (used for pseudonymisation). Only these exact forms are exempt. */
-const EXEMPT = [/\bp\s*(?:<|≤|<=)\s*0?\.001\b/gi, /\b(?:HMAC-)?SHA-?(?:1|224|256|384|512)\b/gi];
+/** Wording allowed without a source number: the "p < 0.001" reporting threshold, hash names
+ *  such as SHA-256 (used for pseudonymisation), and list markers: "(6)" at the start of a line or
+ *  after ". ", ": " or "; ", and "6." or "6)" at the start of a line, each followed by text.
+ *  A bracketed number mid-sentence ("deaths (27) were") is still checked. */
+const EXEMPT = [
+  /\bp\s*(?:<|≤|<=)\s*0?\.001\b/gi,
+  /\b(?:HMAC-)?SHA-?(?:1|224|256|384|512)\b/gi,
+  /(?:^|(?<=[.:;]\s))\(\d{1,2}\)(?=\s+\S)/gm,
+  /^\s*\d{1,2}[.)](?=\s+\D)/gm,
+];
 export function unsupported(text: string, source: unknown, allowed: number[] = [0, 1, 2, 3, 4, 5, 10, 12, 30, 90, 95, 100, 2022]): number[] {
   const ok = new Set<number>(allowed);
   const add = (v: number) => { ok.add(v); ok.add(Math.abs(v)); for (const x of [v, v * 100]) for (const d of [0, 1, 2, 3, 4]) { const f = 10 ** d; ok.add(Math.round(x * f) / f); ok.add(Math.abs(Math.round(x * f) / f)); } };

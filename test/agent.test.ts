@@ -30,3 +30,13 @@ test("p < 0.001 and SHA-256 are allowed; the same numbers elsewhere are not", ()
   assert.deepEqual(unsupported("The rate fell by 0.001 in 256 patients.", src), [0.001, 256]);
   assert.deepEqual(unsupported("p = 0.001", src), [0.001]);
 });
+
+test("list markers are allowed; bracketed numbers in a sentence are not", () => {
+  const src = { p_value: 0.03 };
+  const limits = "Limitations: (1) Small sample. (6) Weights were fixed; (7) No sensitivity analyses.\n(8) Single centre.\n9. Coding not assessed.\n10) Short follow-up.";
+  assert.deepEqual(unsupported(limits, src), []);
+  assert.deepEqual(unsupported("Few events (27 deaths in total) occurred.", src), [27]);
+  assert.deepEqual(unsupported("Deaths (27) were rare.", src), [27]);
+  assert.deepEqual(unsupported("The cost rose. (6)", src), [6]);
+  assert.deepEqual(unsupported("9. 47 patients died.", src), [9, 47]); // "9." before a number is not taken as a marker
+});
