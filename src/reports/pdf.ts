@@ -97,8 +97,12 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
     if (meta.status !== "published") {
       doc.save().rotate(-35, { origin: [300, 420] }).font("bold").fontSize(64).fillColor("#c0392b").opacity(0.12).text("DRAFT", 120, 400).restore();
     }
+    // Writing below the bottom margin would make pdfkit add a page.
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc.font("body").fontSize(7.5).fillColor(MUTED).opacity(1)
       .text(`InnovaHospital | ${s.hospital} | ${s.period} r${meta.revision} | page ${i + 1} of ${range.count}`, 50, doc.page.height - 40, { width: W, align: "center", lineBreak: false });
+    doc.page.margins.bottom = bottom;
   }
   doc.end();
   return done;

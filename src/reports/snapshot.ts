@@ -12,6 +12,7 @@ const monthEnd = (period: string) => {
 const addDays = (iso: string, d: number) => new Date(Date.parse(iso) + d * 86400000).toISOString().slice(0, 10);
 const median = (v: number[]) => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b); const h = s.length >> 1; return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2; };
 const r2 = (v: number) => Math.round(v * 100) / 100;
+const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 export type IndicatorStatus = "missing" | "unverified" | "returned" | "not_applicable" | "suppressed" | "verified";
 
@@ -124,12 +125,15 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
   for (const e of expiring) actions.push({ action: `Renew ${e.kind} approval for "${e.title}" (expires ${e.expiry_date})`, owner: "Governance recorder", due_date: e.expiry_date < due ? e.expiry_date : due, status: "open", source: "governance" });
 
   const verified = indicators.filter((i) => i.status === "verified");
+  const active = stages.find((x) => x.stage === "active")?.projects ?? 0;
+  const ideasTotal = ideaCounts.reduce((sum, x) => sum + x.n, 0);
+  const withTarget = verified.filter((i) => i.meets_target !== undefined);
   const summary = [
-    `${stages.find((s) => s.stage === "active")?.projects ?? 0} projects active at cutoff; ${activated} activated during ${period}.`,
-    `${ideaCounts.reduce((s, x) => s + x.n, 0)} research ideas in the pipeline${fromGaps ? `, ${fromGaps} generated from hospital-data research gaps` : ""}.`,
-    verified.length ? `${verified.filter((i) => i.meets_target).length} of ${verified.filter((i) => i.meets_target !== undefined).length} verified indicators met target; indicator completeness ${completeness}%.` : `No verified quality indicators for ${period}.`,
-    intelligence ? `Hospital data (${intelligence.covers}, ${intelligence.total_cases} cases) yielded ${(intelligence.confirmed_gaps as unknown[]).length} confirmed research gaps; ${intelligence.gaps_awaiting_review} await review.` : "No hospital-data analysis covers this period yet.",
-    `${onHold.length} projects on hold, ${overdue.length} overdue milestones, ${expiring.length} approvals expiring within 60 days.`,
+    `${n(active, "project")} active at cutoff; ${activated} activated during ${period}.`,
+    `${n(ideasTotal, "research idea")} in the pipeline${fromGaps ? `, ${fromGaps} generated from hospital-data research gaps` : ""}.`,
+    verified.length ? `${withTarget.filter((i) => i.meets_target).length} of ${n(withTarget.length, "verified indicator")} met target; indicator completeness ${completeness}%.` : `No verified quality indicators for ${period}.`,
+    intelligence ? `Hospital data (${intelligence.covers}, ${intelligence.total_cases} cases) yielded ${n((intelligence.confirmed_gaps as unknown[]).length, "confirmed research gap")}; ${intelligence.gaps_awaiting_review} awaiting review.` : "No hospital-data analysis covers this period yet.",
+    `${n(onHold.length, "project")} on hold, ${n(overdue.length, "overdue milestone")}, ${n(expiring.length, "approval")} expiring within 60 days.`,
   ];
 
   return {

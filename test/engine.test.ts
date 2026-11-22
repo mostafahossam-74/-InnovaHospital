@@ -62,3 +62,13 @@ test("template ideas state only the gap's numbers", () => {
   const bad = { ...templateIdea({ ...econ, id: "x", hospital: "H", currency: "EGP" }), rationale: "Mortality fell by 37.25%." };
   assert.deepEqual(unsupportedNumbers(bad, { ...econ, id: "x", hospital: "H", currency: "EGP" }), [37.25]);
 });
+
+test("PDF has no blank overflow pages", async () => {
+  const { renderPdf } = await import("../src/reports/pdf.ts");
+  const snap = { period: "2026-10", cutoff: "2026-10-31", hospital: "H", country: "EG", currency: "EGP", disclosure_threshold: 5, executive_summary: ["x"],
+    funnel: { ideas_by_status: [], triaged_in_period: 0, median_triage_days: null, ideas_from_gaps: 0 }, portfolio: { by_stage: [], activated_in_period: 0, by_category: [] },
+    milestones: { due_in_period: 0, completed_on_time: 0, on_time_rate_percent: null, overdue_unresolved: 0 }, outputs: [], training: { enrolled: 0, completed: 0, completion_percent: null },
+    partnerships: [], indicators: [], indicator_completeness_percent: null, research_intelligence: null, risks: { on_hold: [], approvals_expiring: [], approval_problems: [] }, actions: [], limitations: ["l"] };
+  const pdf = await renderPdf(snap as any, { revision: 1, status: "draft", digest: "0".repeat(64) });
+  assert.equal((pdf.toString("latin1").match(/\/Type \/Page\b/g) ?? []).length, 1);
+});

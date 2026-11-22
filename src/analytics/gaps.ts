@@ -66,7 +66,7 @@ export function detectGaps(a: AnalysisResult): GapCandidate[] {
       title: `Cost-effectiveness of ${e.management} vs ${e.reference} in ${e.condition_label}`,
       statement: `From ${span}, ${e.management} for ${e.condition_label} (${e.condition_code}; n = ${e.n} vs ${e.n_ref}) ${desc} compared with ${e.reference} ` +
         `(mean cost ${money(e.mean_cost, e.currency)} vs ${money(e.mean_cost_ref, e.currency)}). ` +
-        `No hospital-level cost-effectiveness or budget-impact estimate exists; moving the ${e.reference} patients to ${e.management} would change annual costs by a crude ${money(e.annual_budget_impact, e.currency)}.`,
+        `No hospital-level cost-effectiveness or budget-impact estimate exists; moving the ${e.reference} patients to ${e.management} would ${e.annual_budget_impact < 0 ? "lower" : "raise"} annual costs by a crude ${money(Math.abs(e.annual_budget_impact), e.currency)}.`,
       condition_code: e.condition_code, condition_label: e.condition_label, department_id: null, metrics: e,
       priority_score: priority(share(e.condition_code), Math.abs(e.relative_cost_difference) / 0.30, null),
       suggested_designs: ["Cost-effectiveness analysis (hospital and payer perspective)", "Budget-impact analysis", "Micro-costing study", "Decision-analytic model with probabilistic sensitivity analysis"],
@@ -158,5 +158,6 @@ export function detectGaps(a: AnalysisResult): GapCandidate[] {
       suggested_designs: ["Data-quality audit", "Data dictionary and capture redesign"],
     });
   }
+  for (const g of out) g.title = g.title[0].toUpperCase() + g.title.slice(1);
   return out.sort((x, y) => y.priority_score - x.priority_score || x.gap_key.localeCompare(y.gap_key));
 }
