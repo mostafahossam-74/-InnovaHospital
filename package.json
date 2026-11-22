@@ -4,6 +4,7 @@
   "description": "InnovaHospital: hospital research office hub and outcomes analytics (API, research-gap engine, monthly executive reports)",
   "scripts": {
     "db:setup": "bash scripts/db-setup.sh",
+    "db:migrate": "node scripts/migrate.ts",
     "typecheck": "tsc -p .",
     "test": "node --test --test-concurrency=1 test/*.test.ts",
     "start:api": "node --env-file-if-exists=.env src/server.ts",
