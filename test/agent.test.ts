@@ -22,3 +22,11 @@ test("numbers quoted exactly from the source pass, invented ones do not", () => 
   assert.deepEqual(unsupported("p = 0.000002, OR 1.42", { p_value: 0.000002, or: 1.4213 }), []);
   assert.deepEqual(unsupported("p = 0.000002 and 7.3", { p_value: 0.000002 }), [7.3]);
 });
+
+test("p < 0.001 and SHA-256 are allowed; the same numbers elsewhere are not", () => {
+  const src = { p_value: 0.000002 };
+  assert.deepEqual(unsupported("Mortality differed (p < 0.001). Record numbers were hashed with HMAC-SHA-256.", src), []);
+  assert.deepEqual(unsupported("P≤0.001; P <= .001; sha256 digests", src), []);
+  assert.deepEqual(unsupported("The rate fell by 0.001 in 256 patients.", src), [0.001, 256]);
+  assert.deepEqual(unsupported("p = 0.001", src), [0.001]);
+});
