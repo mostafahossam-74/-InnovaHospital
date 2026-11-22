@@ -1,0 +1,84 @@
+# Render Blueprint: staging for InnovaHospital (synthetic data only, see README "Deploying to Render").
+#
+#   innovahospital-db       PostgreSQL 16; the app connects as ih_web, migrations run as the owner
+#   innovahospital          API + web app on one origin; migrations before every deploy; disk for released PDFs
+#   innovahospital-worker   scheduler: daily expiry sweep and notification emails
+#
+# Region: Frankfurt, the closest Render region to Egypt and Saudi Arabia. Where hospital data may
+# be processed is for the hospital's data-protection review (Egypt PDPL 151/2020, KSA PDPL).
+
+databases:
+  - name: innovahospital-db
+    databaseName: innovahospital
+    user: innovahospital_owner
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"
+    ipAllowList: []            # no access from outside Render's private network
+
+envVarGroups:
+  - name: innovahospital-shared
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: SYNTHETIC_DATA     # watermarks every PDF as synthetic; staging holds no real data
+        value: "true"
+      - key: AUTH_MODE          # built-in email/password accounts (no identity provider yet)
+        value: local
+      - key: IH_WEB_PASSWORD    # the app's database login; set on the ih_web role at every deploy
+        generateValue: true
+      - key: LOCAL_AUTH_SECRET  # signs sign-in sessions
+        generateValue: true
+      - key: DEID_KEY           # pseudonymises patient record numbers in study uploads
+        generateValue: true
+      - key: MAIL_TRANSPORT     # "log" until an email provider is configured
+        value: log
+      - key: APP_BASE_URL       # the portal's public address, e.g. https://innovahospital.onrender.com
+        sync: false
+      - key: INNOVA_ANTHROPIC_API_KEY   # optional: the Claude study agent; leave empty to use rules and templates
+        sync: false
+
+services:
+  - type: web
+    name: innovahospital
+    runtime: node
+    region: frankfurt
+    plan: starter
+    branch: main
+    buildCommand: npm ci && cd web && npm ci && VITE_AUTH_MODE=local npm run build
+    preDeployCommand: node scripts/render.ts predeploy
+    startCommand: node scripts/render.ts api
+    healthCheckPath: /healthz
+    disk:
+      name: objects
+      mountPath: /var/data    # released report PDFs (write-once), OBJECT_STORE_DIR=/var/data/objects
+      sizeGB: 1
+    envVars:
+      - fromGroup: innovahospital-shared
+      - key: OWNER_DATABASE_URL
+        fromDatabase: { name: innovahospital-db, property: connectionString }
+      - key: DB_HOST
+        fromDatabase: { name: innovahospital-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: innovahospital-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: innovahospital-db, property: database }
+
+  - type: worker
+    name: innovahospital-worker
+    runtime: node
+    region: frankfurt
+    plan: starter
+    branch: main
+    buildCommand: npm ci
+    startCommand: node scripts/render.ts worker
+    envVars:
+      - fromGroup: innovahospital-shared
+      - key: DB_HOST
+        fromDatabase: { name: innovahospital-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: innovahospital-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: innovahospital-db, property: database }
