@@ -49,7 +49,7 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
   table(["Idea status", "Ideas"], s.funnel.ideas_by_status.map((x: any) => [x.status, x.n]), [3, 1]);
   p(`Ideas triaged in ${s.period_label ?? s.period}: ${s.funnel.triaged_in_period}; median triage turnaround: ${s.funnel.median_triage_days ?? "—"} days.`);
   table(["Project stage", "Projects"], s.portfolio.by_stage.map((x: any) => [x.stage, x.projects]), [3, 1]);
-  p(`Activated during the month: ${s.portfolio.activated_in_period}. Milestones due: ${s.milestones.due_in_period}, on time: ${s.milestones.completed_on_time}` +
+  p(`Activated during the period: ${s.portfolio.activated_in_period}. Milestones due: ${s.milestones.due_in_period}, on time: ${s.milestones.completed_on_time}` +
     `${s.milestones.on_time_rate_percent !== null ? ` (${s.milestones.on_time_rate_percent}%)` : ""}; overdue unresolved: ${s.milestones.overdue_unresolved}.`);
 
   h2("Quality indicators");
@@ -74,8 +74,11 @@ export function renderPdf(s: Snapshot, meta: { revision: number; status: string;
   }
 
   h2("Outputs, training and partnerships");
-  table(["Output type", "Approved", "Submitted in month", "Published in month"], s.outputs.map((o: any) => [o.output_type, o.approved, o.submitted_in_period, o.published_in_period]), [2, 1, 1.4, 1.4]);
-  p(`Training: ${s.training.completed} of ${s.training.enrolled} enrolled completed${s.training.completion_percent !== null ? ` (${s.training.completion_percent}%)` : ""}.`);
+  table(["Output type", "Approved", "Submitted in period", "Published in period"], s.outputs.map((o: any) => [o.output_type, o.approved, o.submitted_in_period, o.published_in_period]), [2, 1, 1.4, 1.4]);
+  if (s.training.cohorts_ended === undefined) p(`Training: ${s.training.completed} of ${s.training.enrolled} enrolled completed${s.training.completion_percent !== null ? ` (${s.training.completion_percent}%)` : ""}.`);
+  else if (!s.training.cohorts_ended) p(`Training: no cohort ended in ${s.period_label ?? s.period}.`);
+  else p(`Training: in ${s.training.cohorts_ended} cohort${s.training.cohorts_ended === 1 ? "" : "s"} that ended in ${s.period_label ?? s.period}, ${s.training.completed} of ${s.training.eligible} people met the completion rule` +
+    `${s.training.completion_percent !== null ? ` (${s.training.completion_percent}%)` : ""}${s.training.awaiting_decision ? `; ${s.training.awaiting_decision} awaiting a completion decision` : ""}.`);
   if (s.partnerships.length) table(["Partnership stage", "Currency", "Count", "Pipeline value"], s.partnerships.map((x: any) => [x.stage, x.currency ?? "—", x.n, x.value ? x.value.toLocaleString("en-US") : "—"]), [2, 1, 1, 1.6]);
 
   h2("Risks and decisions");

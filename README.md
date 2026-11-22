@@ -47,7 +47,7 @@ Live check of the Claude study agent (needs `INNOVA_ANTHROPIC_API_KEY` set befor
 Tests (each test file creates its own database; GitHub Actions runs them, the type checks and the web build on every pull request and push to `main`, see `.github/workflows/test.yml`):
 
 ```bash
-npm test          # 71 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
+npm test          # 77 tests: statistics validated against statsmodels, analytics, API and study-cycle acceptance checks against PostgreSQL
 npm run typecheck && (cd web && npx tsc -b)
 ```
 
@@ -91,6 +91,7 @@ An empty outcome cell means "not recorded", which is different from 0. Counts mu
 | Principal investigator | Propose ideas, edit and submit their own, manage their projects' milestones and outputs |
 | Governance recorder | Record official ethics and data decisions |
 | Department lead | Work within their department, verify indicators |
+| Training manager | Runs training cohorts within their departments: enrollment, attendance, scores and completion decisions |
 | Executive reader | Released reports only |
 
 A grant can apply to all departments or to one department, with an optional end date. The person who submits data, runs an analysis or authors a report cannot also verify, confirm or approve it. The approving reviewer cannot release.
@@ -149,6 +150,12 @@ Events queue a notice in the same transaction, one per recipient, and the worker
 An email says what needs doing and links to the portal; it never contains report figures or governance details. The address is looked up when the email is sent, from the person's active membership, so revoked access stops further mail and a member without an address is skipped. A failed send is retried after 5, 10, 20 and 40 minutes, then marked failed. Delivery is at least once: a crash between sending and recording can repeat one email, never lose one. Notices are kept in `notification`.
 
 Only the `log` transport exists until an email provider is chosen; a provider plugs in behind the `Mailer` interface in `src/notifications.ts`.
+
+## Training
+
+Each cohort states its completion rule: the share of its sessions a person must attend (default 80%) and, when an assessment is required, the pass score. People are enrolled by name (with an optional email, department or account); attendance is ticked per session and the score recorded, moving them through enrolled → attended → assessed, with every change in the audit log. Once the cohort has ended, a training manager, coordinator or research director records each person's decision — completed or incomplete — which the rule determines; a completed record can carry a certificate reference.
+
+The executive report's training figure is the handoff KPI: people meeting their cohort's rule divided by the eligible people (enrolled, not withdrawn) in cohorts that ended during the report's months. People still awaiting a decision appear as a 30-day action. Cohorts recorded before person records existed count with the numbers entered for them.
 
 ## Database migrations
 

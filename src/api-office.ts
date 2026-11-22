@@ -353,24 +353,8 @@ export function registerOfficeRoutes({ r, scoped }: RouteDeps) {
     return { body: { version: o.version + 1 } };
   }));
 
-  // ---- Training and partnerships ---------------------------------------------------------
-  r.on("GET", `${W}/training`, (ctx) => scoped(ctx, STAFF, async (c) => ({ body: { items: (await c.query("SELECT * FROM training_cohort ORDER BY start_date DESC")).rows } })));
-  r.on("POST", `${W}/training`, (ctx) => scoped(ctx, OFFICE, async (c, me, wsId) => {
-    const b = z.object({ title: text(300), competencies: z.array(text(200)).max(30).default([]), facilitator: text(300), start_date: z.string().date(),
-      end_date: z.string().date(), capacity: z.number().int().positive().optional(), method: z.enum(["in_person", "online", "blended"]).default("in_person") }).strict().parse(await ctx.body());
-    const id = (await c.query(`INSERT INTO training_cohort (workspace_id, title, competencies, facilitator, start_date, end_date, capacity, method)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [wsId, b.title, b.competencies, b.facilitator, b.start_date, b.end_date, b.capacity ?? null, b.method])).rows[0].id;
-    await audit(c, wsId, actorId(me), "training.create", "training_cohort", id, {}, ctx.requestId);
-    return { status: 201, body: { id } };
-  }));
-  r.on("PATCH", `${W}/training/{id}`, (ctx) => scoped(ctx, OFFICE, async (c, me, wsId) => {
-    const b = z.object({ expected_version: version, enrolled: z.number().int().min(0), completed: z.number().int().min(0) }).strict().parse(await ctx.body());
-    const upd = await c.query("UPDATE training_cohort SET enrolled = $3, completed = $4, version = version + 1 WHERE id = $1 AND version = $2 RETURNING version",
-      [idParam(ctx), b.expected_version, b.enrolled, b.completed]);
-    if (!upd.rowCount) throw conflict("cohort");
-    await audit(c, wsId, actorId(me), "training.update", "training_cohort", ctx.params.id, b, ctx.requestId);
-    return { body: { version: upd.rows[0].version } };
-  }));
+  // ---- Partnerships ------------------------------------------------------------------------
+  // Training routes are in api-training.ts.
 
   r.on("GET", `${W}/partnerships`, (ctx) => scoped(ctx, ["research_director", "coordinator", "hospital_admin", "innovastat_reviewer"], async (c) =>
     ({ body: { items: (await c.query("SELECT * FROM partnership ORDER BY updated_at DESC")).rows } })));

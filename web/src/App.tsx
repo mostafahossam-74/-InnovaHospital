@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
-  Activity, BarChart3, Building2, Database, FileText, FlaskConical, GraduationCap, Languages, LayoutDashboard,
+  Activity, BarChart3, Building2, Database, FileText, FlaskConical, GraduationCap, Handshake, Languages, LayoutDashboard,
   Lightbulb, LockKeyhole, LogOut, Microscope, Send, ShieldCheck, Target, Users, Wrench, Inbox,
 } from "lucide-react";
 import {
@@ -24,6 +24,7 @@ import { Projects } from "@/views/Projects";
 import { Indicators } from "@/views/Indicators";
 import { Reports } from "@/views/Reports";
 import { Office } from "@/views/Office";
+import { Training } from "@/views/Training";
 import { WorkspaceSettings } from "@/views/WorkspaceSettings";
 import { Platform } from "@/views/Platform";
 import { Workbench } from "@/views/Workbench";
@@ -31,7 +32,7 @@ import { Deliverables } from "@/views/Deliverables";
 import { HospitalResearch } from "@/views/HospitalResearch";
 
 const DEMO_USERS = ["analyst", "statistician", "statistician2", "director", "coordinator", "steward", "pi", "governance", "admin", "exec", "platform-admin"];
-const STAFF: Role[] = ["hospital_admin", "research_director", "department_lead", "investigator", "coordinator", "governance_recorder", "data_steward", "innovastat_reviewer", "innovastat_analyst"];
+const STAFF: Role[] = ["hospital_admin", "research_director", "department_lead", "investigator", "coordinator", "governance_recorder", "data_steward", "innovastat_reviewer", "innovastat_analyst", "training_manager"];
 const INTERNAL: Role[] = ["innovastat_analyst", "innovastat_reviewer"];
 
 type NavItem = { id: string; label: string; ar: string; icon: any; title: string; subtitle: string; show: (c: Ctx) => boolean };
@@ -46,7 +47,8 @@ const NAV: NavItem[] = [
   { id: "ideas", label: "Ideas & intake", ar: "الأفكار البحثية", icon: Lightbulb, title: "Research ideas", subtitle: "Proposals from clinicians: triage, feasibility and conversion.", show: (c) => c.staff },
   { id: "projects", label: "Studies", ar: "المشاريع", icon: FlaskConical, title: "Ongoing studies", subtitle: "Studies from approval to publication, gated by ethics and data approvals.", show: (c) => c.staff },
   { id: "indicators", label: "Quality indicators", ar: "مؤشرات الجودة", icon: Activity, title: "Quality indicators", subtitle: "Versioned definitions, monthly values and independent verification.", show: (c) => c.staff },
-  { id: "office", label: "Training & partners", ar: "التدريب والشراكات", icon: GraduationCap, title: "Training, outputs and partnerships", subtitle: "Research capacity, publications and the funding pipeline.", show: (c) => c.staff },
+  { id: "training", label: "Training", ar: "التدريب", icon: GraduationCap, title: "Training", subtitle: "Cohorts, attendance, assessment and completion for each person.", show: (c) => c.staff },
+  { id: "office", label: "Outputs & partners", ar: "المخرجات والشراكات", icon: Handshake, title: "Outputs and partnerships", subtitle: "Publications and the funding pipeline.", show: (c) => c.staff },
   { id: "reports", label: "Executive reports", ar: "التقارير التنفيذية", icon: FileText, title: "Executive reports", subtitle: "For the months the coordinator chooses: drafted by the coordinator, reviewed, released by the research director.", show: () => true },
   { id: "settings", label: "Settings & access", ar: "الإعدادات", icon: Wrench, title: "Settings and access", subtitle: "Departments, role grants and reporting policy.", show: (c) => c.has("hospital_admin") },
 ];
@@ -291,6 +293,7 @@ export default function App() {
                 {route.view === "ideas" && ctx.staff && <Ideas ideaId={route.param} />}
                 {route.view === "projects" && ctx.staff && <Projects projectId={route.param} />}
                 {route.view === "indicators" && ctx.staff && <Indicators />}
+                {route.view === "training" && ctx.staff && <Training cohortId={route.param} />}
                 {route.view === "office" && ctx.staff && <Office />}
                 {route.view === "reports" && <Reports reportId={route.param} />}
                 {route.view === "settings" && ctx.has("hospital_admin") && <WorkspaceSettings />}

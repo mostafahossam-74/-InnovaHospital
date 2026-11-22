@@ -112,7 +112,17 @@ await api("director", "POST", `${W}/indicator-definitions`, { code: "followup", 
 await api("steward", "PUT", `${W}/indicators/cardio/${end}/followup`, { numerator: 32, denominator: 40 });
 await api("steward", "PUT", `${W}/indicators/onco/${end}/followup`, { numerator: 3, denominator: 11 });
 for (const o of (await api("statistician", "GET", `${W}/indicators?period=${end}`)).items) await api("statistician", "POST", `${W}/indicators/${o.id}/verify`, { decision: "verified", expected_version: o.input_version });
-await api("coordinator", "POST", `${W}/training`, { title: "Health economics for clinicians", competencies: ["Costing", "Cost-effectiveness", "Budget impact"], facilitator: "InnovaStat", start_date: "2026-09-01", end_date: "2026-10-15" });
+// Training: a cohort that ended in October, with each participant's attendance, score and completion decision.
+const course = await api("coordinator", "POST", `${W}/training`, { title: "Health economics for clinicians", competencies: ["Costing", "Cost-effectiveness", "Budget impact"],
+  facilitator: "InnovaStat", start_date: "2026-09-01", end_date: "2026-10-15", sessions: 6, min_attendance_percent: 80, assessment_required: true, pass_score: 70 });
+// [attended sessions, score, decide]: synthetic participants; the last is left for the training manager to decide.
+const roster: [number[], number, boolean][] = [[[1, 2, 3, 4, 5, 6], 88, true], [[1, 2, 3, 4, 5], 74, true], [[1, 2, 3, 4, 6], 91, true], [[1, 2, 3], 80, true],
+  [[1, 2, 3, 4, 5, 6], 62, true], [[2, 3, 4, 5, 6], 77, true], [[1, 2, 4, 5, 6], 85, true], [[1, 2, 3, 4, 5, 6], 79, false]];
+for (const [i, [sessions, score, decide]] of roster.entries()) {
+  const e = await api("coordinator", "POST", `${W}/training/${course.id}/enrollments`, { participant_name: `Participant ${String.fromCharCode(65 + i)} (synthetic)`, department_id: i % 2 ? dept.cardio : dept.icu });
+  const rec = await api("coordinator", "PATCH", `${W}/training/enrollments/${e.id}`, { expected_version: 1, attended_sessions: sessions, score });
+  if (decide) await api("coordinator", "POST", `${W}/training/enrollments/${e.id}/decide`, { expected_version: rec.version });
+}
 await api("coordinator", "POST", `${W}/partnerships`, { organization: "Synthetic Research Foundation", opportunity_type: "grant", owner: "Research office", purpose: "Sepsis bundle cost-effectiveness study", amount: 750000, currency: "EGP" });
 
 // Monthly report: drafted, reviewed, released.
