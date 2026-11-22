@@ -1,0 +1,31 @@
+{
+  "name": "innovahospital",
+  "version": "0.1.0",
+  "description": "InnovaHospital: hospital research office hub and outcomes analytics (API, research-gap engine, monthly executive reports)",
+  "scripts": {
+    "db:setup": "bash scripts/db-setup.sh",
+    "typecheck": "tsc -p .",
+    "test": "node --test --test-concurrency=1 test/*.test.ts",
+    "start:api": "node --env-file-if-exists=.env src/server.ts",
+    "dev:db": "bash scripts/dev-db.sh",
+    "dev:api": "bash scripts/dev-api.sh",
+    "dev:seed": "node scripts/seed-demo.ts"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
+    "jose": "^6.2.15",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.23.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/pdfkit": "^0.17.7",
+    "@types/pg": "^8.23.1",
+    "typescript": "5.9"
+  },
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18.0" }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InnovaHospital local executive report snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["period", "metrics", "portfolio_current", "proposed_actions"],
+  "properties": {
+    "period": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["department", "metric", "label", "status"],
+        "properties": {
+          "department": {"type": "string"},
+          "metric": {"type": "string"},
+          "label": {"type": "string"},
+          "status": {"enum": ["missing", "unverified", "not_applicable", "suppressed", "verified"]},
+          "numerator": {"type": "integer", "minimum": 0},
+          "denominator": {"type": "integer", "minimum": 1},
+          "percent": {"type": "number", "minimum": 0, "maximum": 100},
+          "target_percent": {"type": "number", "minimum": 0, "maximum": 100},
+          "meets_target": {"type": "boolean"}
+        },
+        "if": {"properties": {"status": {"const": "verified"}}},
+        "then": {"required": ["numerator", "denominator", "percent", "target_percent", "meets_target"]},
+        "else": {"not": {"anyOf": [
+          {"required": ["numerator"]}, {"required": ["denominator"]},
+          {"required": ["percent"]}, {"required": ["target_percent"]}, {"required": ["meets_target"]}
+        ]}}
+      }
+    },
+    "portfolio_current": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["stage", "projects"],
+        "properties": {
+          "stage": {"type": "string"},
+          "projects": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "proposed_actions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["department", "action"],
+        "properties": {"department": {"type": "string"}, "action": {"type": "string"}}
+      }
+    }
+  }
+}
