@@ -128,6 +128,11 @@ test("plans are locked before running; post-exposure covariates are refused; res
   const r = (await h.api("stat", "GET", P(`/studies/results/${result}`))).body;
   assert.equal(r.plan_sha256, lock.body.sha256);
   assert.equal(r.results.split, "validation");
+  // Totals are in the result, so an interpretation may quote them.
+  const c = r.results.crude;
+  assert.equal(c.events_total, c.events_treated + c.events_reference);
+  assert.equal(c.n_total, c.n_treated + c.n_reference);
+  assert.equal(c.risk_total, Math.round((c.events_total / c.n_total) * 1e4) / 1e4);
   // The statistician cannot add numbers that are not in the result.
   assert.equal((await h.api("stat", "POST", P(`/studies/results/${result}/review`), { decision: "accepted", interpretation: "OR 9.99" })).status, 422);
   assert.equal((await h.api("stat", "POST", P(`/studies/results/${result}/review`), { decision: "accepted" })).status, 200);
