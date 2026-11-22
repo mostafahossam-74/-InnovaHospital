@@ -9,7 +9,8 @@
     "start:api": "node --env-file-if-exists=.env src/server.ts",
     "dev:db": "bash scripts/dev-db.sh",
     "dev:api": "bash scripts/dev-api.sh",
-    "dev:seed": "node scripts/seed-demo.ts"
+    "dev:seed": "node scripts/seed-demo.ts",
+    "dev:agent-check": "SEED_AGENT=claude node scripts/seed-demo.ts"
   },
   "license": "UNLICENSED",
   "dependencies": {
