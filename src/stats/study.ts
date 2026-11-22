@@ -143,7 +143,8 @@ export function runPlan(allRows: Row[], vars: VarInfo[], plan: Plan, opts: { see
     if (plan.outcome.type === "binary") {
       const kT = y.filter((v, i) => t[i] && v).length, kR = y.filter((v, i) => !t[i] && v).length;
       const cp = compareProportions(kT, nT, kR, nR);
-      crude = { events_treated: kT, n_treated: nT, risk_treated: r4(cp.p1), events_reference: kR, n_reference: nR, risk_reference: r4(cp.p2),
+      // Totals too, so a report or the agent can quote them without adding up the groups.
+      crude = { events_treated: kT, n_treated: nT, risk_treated: r4(cp.p1), events_reference: kR, n_reference: nR, risk_reference: r4(cp.p2), events_total: kT + kR, n_total: nT + nR, risk_total: r4((kT + kR) / (nT + nR)),
         risk_difference: r4(cp.rd), rd_low: r4(cp.rd_low), rd_high: r4(cp.rd_high), risk_ratio: r4(cp.rr), rr_low: r4(cp.rr_low), rr_high: r4(cp.rr_high), p_value: round(cp.p_value, 6) };
       model = logistic(X, y, names, { weights, robust: plan.method === "iptw" });
       primary = { measure: plan.method === "iptw" ? "odds_ratio_iptw" : "adjusted_odds_ratio", ...ci(model.coefficients[1], Math.exp) };
@@ -151,7 +152,7 @@ export function runPlan(allRows: Row[], vars: VarInfo[], plan: Plan, opts: { see
     } else if (plan.outcome.type === "continuous") {
       const yy = plan.outcome.log_transform ? y.map(Math.log) : y;
       const w = welch(y.filter((_, i) => t[i]), y.filter((_, i) => !t[i]));
-      crude = { mean_treated: r2(wstats(y.filter((_, i) => t[i])).mean), mean_reference: r2(wstats(y.filter((_, i) => !t[i])).mean), n_treated: nT, n_reference: nR,
+      crude = { mean_treated: r2(wstats(y.filter((_, i) => t[i])).mean), mean_reference: r2(wstats(y.filter((_, i) => !t[i])).mean), n_treated: nT, n_reference: nR, n_total: nT + nR,
         mean_difference: r2(w.difference), low: r2(w.low), high: r2(w.high), p_value: round(w.p_value, 6) };
       model = linear(X, yy, names, { weights, robust: plan.method === "iptw" });
       primary = plan.outcome.log_transform ? { measure: "ratio_of_geometric_means", ...ci(model.coefficients[1], Math.exp) } : { measure: "adjusted_mean_difference", ...ci(model.coefficients[1], (v) => v) };
@@ -159,6 +160,7 @@ export function runPlan(allRows: Row[], vars: VarInfo[], plan: Plan, opts: { see
       const ev = rows.map((r) => Number(r[plan.outcome.event_variable!]));
       const lr = logRank(y, ev, t);
       crude = { events_treated: ev.filter((e, i) => e && t[i]).length, n_treated: nT, events_reference: ev.filter((e, i) => e && !t[i]).length, n_reference: nR,
+        events_total: ev.filter((e) => e).length, n_total: nT + nR,
         median_treated: kmMedian(y.filter((_, i) => t[i]), ev.filter((_, i) => t[i])), median_reference: kmMedian(y.filter((_, i) => !t[i]), ev.filter((_, i) => !t[i])),
         logrank_chi2: r4(lr.chi2), p_value: round(lr.p_value, 6) };
       if (plan.method === "iptw") throw new PlanError("Inverse-probability weighting is not available for time-to-event outcomes yet; use regression adjustment");
