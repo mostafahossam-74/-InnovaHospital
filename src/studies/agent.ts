@@ -44,8 +44,22 @@ const SYSTEM: Record<AgentTask, string> = {
   manuscript: "You are a medical writer drafting a manuscript for a peer-reviewed journal from an approved study result (STROBE for observational studies, CHEERS 2022 for economic evaluations). Use only numbers that appear in the input. Mark places needing author input with [AUTHOR INPUT]. Do not invent references; write [REF] where a citation is needed.",
 };
 
+/** Structured output rejects array size limits (maxItems, minItems above 1) and number bounds;
+ *  drop them from the schema sent to the API. The zod schema still enforces every limit on the reply. */
+const API_UNSUPPORTED = new Set(["maxItems", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"]);
+function forApi(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(forApi);
+  if (!node || typeof node !== "object") return node;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node)) {
+    if (API_UNSUPPORTED.has(k) || (k === "minItems" && typeof v === "number" && v > 1)) continue;
+    out[k] = forApi(v);
+  }
+  return out;
+}
+
 /** JSON schema for structured output, from the zod schema. */
-const jsonSchema = (task: AgentTask) => z.toJSONSchema(OUTPUT[task], { target: "draft-2020-12" }) as Record<string, unknown>;
+export const jsonSchema = (task: AgentTask) => forApi(z.toJSONSchema(OUTPUT[task], { target: "draft-2020-12" })) as Record<string, unknown>;
 
 export class ClaudeStudyAgent implements StudyAgent {
   client: Anthropic;
@@ -62,6 +76,7 @@ export class ClaudeStudyAgent implements StudyAgent {
       } as any);
     } catch (err) {
       const status = err instanceof Anthropic.APIError ? err.status : null;
+      console.error(JSON.stringify({ level: "warn", msg: "study agent call failed", task, status, error: err instanceof Error ? err.message.slice(0, 500) : String(err) }));
       return { output: null, problems: [`api_error${status ? `_${status}` : ""}`], model: STUDY_AGENT_MODEL };
     }
     const usage = { input_tokens: response.usage?.input_tokens, output_tokens: response.usage?.output_tokens };
@@ -79,7 +94,7 @@ const numbers = (s: string) => (s.match(NUM_RE) ?? []).map((x) => Number(x.repla
 /** Numbers stated in `text` that do not occur in `source` (in any common rounding or as a percentage). */
 export function unsupported(text: string, source: unknown, allowed: number[] = [0, 1, 2, 3, 4, 5, 10, 12, 30, 90, 95, 100, 2022]): number[] {
   const ok = new Set<number>(allowed);
-  const add = (v: number) => { for (const x of [v, v * 100]) for (const d of [0, 1, 2, 3, 4]) { const f = 10 ** d; ok.add(Math.round(x * f) / f); ok.add(Math.abs(Math.round(x * f) / f)); } };
+  const add = (v: number) => { ok.add(v); ok.add(Math.abs(v)); for (const x of [v, v * 100]) for (const d of [0, 1, 2, 3, 4]) { const f = 10 ** d; ok.add(Math.round(x * f) / f); ok.add(Math.abs(Math.round(x * f) / f)); } };
   const walk = (v: unknown) => { if (typeof v === "number") add(v); else if (typeof v === "string") numbers(v).forEach(add); else if (v && typeof v === "object") Object.values(v).forEach(walk); };
   walk(source);
   return [...new Set(numbers(text))].filter((n) => !ok.has(n) && !ok.has(Math.abs(n)));
