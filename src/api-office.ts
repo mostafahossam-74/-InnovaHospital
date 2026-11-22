@@ -93,7 +93,11 @@ async function requireValidActive(c: Client, wsId: string, actor: string, projec
   const problems = await gateProblems(c, project.id, project.protocol_version, todayIso());
   if (problems.length) {
     await holdProject(c, wsId, actor, project, problems.join("; "), requestId);
-    throw new ApiError(409, "approval_invalid", "The project's approvals are no longer valid; it has been put on hold", problems);
+    // Keep the hold (and its audit entry and notices) although the request is refused.
+    // Callers only read before this check, so nothing else is committed with it.
+    const err = new ApiError(409, "approval_invalid", "The project's approvals are no longer valid; it has been put on hold", problems);
+    err.commit = true;
+    throw err;
   }
 }
 

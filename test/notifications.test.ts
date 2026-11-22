@@ -99,6 +99,23 @@ test("a project put on hold tells its PI and that department's coordinators", as
   assert.ok(sent.every((e) => e.text.includes(`${BASE}/#/w/${ws}/projects/${project}`) && !/expired|REC-1|ethics/.test(e.text)));
 });
 
+test("an edit refused for lapsed approvals still holds the project, audits it and tells the PI", async () => {
+  const project = sql(`INSERT INTO project (workspace_id, department_id, title, pi, study_type, study_category, stage)
+    VALUES ('${ws}', '${dept.icu}', 'ICU registry', '${h.actor("pi")}', 'observational', 'epidemiology', 'active') RETURNING id`);
+  sql(`INSERT INTO governance_decision (workspace_id, project_id, kind, authority, decision, reference, effective_date, expiry_date, protocol_version, permitted_scope, recorder)
+    VALUES ('${ws}', '${project}', 'ethics', 'REC', 'approved', 'REC-2', '2026-01-01', '2026-02-01', 1, 'Coded records', 'gov'),
+           ('${ws}', '${project}', 'data', 'DPO', 'approved', 'DATA-2', '2026-01-01', NULL, 1, 'Coded records', 'gov')`);
+  const milestone = sql(`INSERT INTO milestone (workspace_id, project_id, title, owner, due_date) VALUES ('${ws}', '${project}', 'Data lock', 'pi', '2026-12-01') RETURNING id`);
+  const r = await h.api("coordinator", "PATCH", P(`/milestones/${milestone}`), { expected_version: 1, state: "in_progress" });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error.code, "approval_invalid");
+  assert.equal(sql(`SELECT stage FROM project WHERE id = '${project}'`), "on_hold", "the hold is kept although the edit is refused");
+  assert.equal(sql(`SELECT count(*) FROM audit_event WHERE workspace_id = '${ws}' AND action = 'project.hold' AND entity_id = '${project}'`), "1");
+  assert.equal(sql(`SELECT state || '|' || version FROM milestone WHERE id = '${milestone}'`), "planned|1", "the refused edit itself is not saved");
+  await deliver();
+  assert.deepEqual(recipients(mail.take()), [addr("icu_coord"), addr("pi")], "the PI and ICU's coordinator; not the coordinator who made the edit, who saw the refusal");
+});
+
 test("revoked access stops mail that was already queued", async () => {
   const d = await h.api("coordinator", "POST", P("/report-runs"), { period: "2026-04" }, key());
   assert.equal(d.status, 201);
