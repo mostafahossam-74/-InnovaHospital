@@ -94,17 +94,17 @@ test("the expiry sweep runs once per local day and holds a project whose approva
 test("a failing job is rolled back, retried with backoff, then marked failed and audited", async () => {
   const failing = { ...ACTIONS, report_draft: async (c: any, j: any) => { await ACTIONS.report_draft(c, j); throw new Error("PDF service down"); } };
   let now = at("2026-08-03T05:00:00Z");
-  await tick(h.pool, now, failing);
+  await tick(h.pool, now, { actions: failing });
   assert.equal(job(riyadh, "report_draft", "2026-07"), "pending|1");
   assert.equal(reports(riyadh, "2026-07"), "0", "the draft made before the error is rolled back");
   assert.equal(sql(`SELECT last_error FROM scheduled_job WHERE workspace_id = '${riyadh}' AND job_key = '2026-07'`), "PDF service down");
   // Not retried before its time.
-  await tick(h.pool, new Date(now.getTime() + RETRY_BASE_MS - 1000), failing);
+  await tick(h.pool, new Date(now.getTime() + RETRY_BASE_MS - 1000), { actions: failing });
   assert.equal(job(riyadh, "report_draft", "2026-07"), "pending|1");
   // Retried after 5, 10, 20, 40 minutes, then given up.
   for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt++) {
     now = new Date(now.getTime() + RETRY_BASE_MS * 2 ** (attempt - 1));
-    await tick(h.pool, now, failing);
+    await tick(h.pool, now, { actions: failing });
   }
   assert.equal(job(riyadh, "report_draft", "2026-07"), `failed|${MAX_ATTEMPTS}`);
   assert.equal(sql(`SELECT count(*) FROM audit_event WHERE workspace_id = '${riyadh}' AND action = 'scheduler.job_failed'`), "1");

@@ -6,6 +6,8 @@ export class ApiError extends Error {
   status: number;
   code: string;
   details?: unknown;
+  /** Set when the request's writes so far must be kept although the request fails (see withTenant). */
+  commit?: boolean;
   constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
     this.status = status;

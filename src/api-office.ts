@@ -4,6 +4,7 @@
 import { z } from "zod";
 import type { Client } from "./db.ts";
 import { audit } from "./db.ts";
+import { membersWithRoles, notify } from "./notifications.ts";
 import { ApiError } from "./http.ts";
 import { actorId, can, departmentScope, ROLES, STAFF } from "./auth.ts";
 import type { Identity, Role, WorkspaceAccess } from "./auth.ts";
@@ -61,9 +62,13 @@ export async function gateProblems(c: Client, projectId: string, protocolVersion
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
 async function holdProject(c: Client, wsId: string, actor: string, p: { id: string; stage: string }, reason: string, requestId: string) {
-  await c.query("UPDATE project SET stage = 'on_hold', hold_reason = $2, version = version + 1, updated_at = now() WHERE id = $1", [p.id, reason]);
+  const held = (await c.query("UPDATE project SET stage = 'on_hold', hold_reason = $2, version = version + 1, updated_at = now() WHERE id = $1 RETURNING pi, department_id, version",
+    [p.id, reason])).rows[0];
   await c.query("INSERT INTO project_stage_history (workspace_id, project_id, from_stage, to_stage, actor, reason) VALUES ($1,$2,$3,'on_hold',$4,$5)", [wsId, p.id, p.stage, actor, reason]);
   await audit(c, wsId, actor, "project.hold", "project", p.id, { reason }, requestId);
+  // The PI and the coordinators for the department; the message links to the project, not the reason.
+  await notify(c, wsId, { kind: "project_on_hold", recipients: [held.pi, ...await membersWithRoles(c, ["coordinator"], held.department_id)], exclude: [actor],
+    entityType: "project", entityId: p.id, linkPath: `/#/w/${wsId}/projects/${p.id}`, dedupe: `project_on_hold:${p.id}:v${held.version}` });
 }
 
 /**
@@ -88,7 +93,11 @@ async function requireValidActive(c: Client, wsId: string, actor: string, projec
   const problems = await gateProblems(c, project.id, project.protocol_version, todayIso());
   if (problems.length) {
     await holdProject(c, wsId, actor, project, problems.join("; "), requestId);
-    throw new ApiError(409, "approval_invalid", "The project's approvals are no longer valid; it has been put on hold", problems);
+    // Keep the hold (and its audit entry and notices) although the request is refused.
+    // Callers only read before this check, so nothing else is committed with it.
+    const err = new ApiError(409, "approval_invalid", "The project's approvals are no longer valid; it has been put on hold", problems);
+    err.commit = true;
+    throw err;
   }
 }
 

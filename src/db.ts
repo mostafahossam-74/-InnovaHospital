@@ -18,6 +18,8 @@ export const isUuid = (v: string): boolean => UUID_RE.test(v);
  * Runs `fn` in one transaction scoped to a workspace. Row-level security uses
  * app.workspace_id, which set_config(..., true) limits to this transaction.
  * Call only after the service has verified the caller's membership.
+ * An error rolls the transaction back, except one marked `commit: true`: its writes
+ * are committed and the error is still thrown (used to record a hold, then refuse).
  */
 export async function withTenant<T>(pool: Pool, workspaceId: string, fn: (c: Client) => Promise<T>): Promise<T> {
   if (!isUuid(workspaceId)) throw new Error("withTenant requires a workspace UUID");
@@ -29,7 +31,8 @@ export async function withTenant<T>(pool: Pool, workspaceId: string, fn: (c: Cli
     await client.query("COMMIT");
     return result;
   } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
+    const keep = (err as { commit?: unknown } | null)?.commit === true;
+    await client.query(keep ? "COMMIT" : "ROLLBACK").catch(() => {});
     throw err;
   } finally {
     client.release();
