@@ -57,6 +57,14 @@ test("dictionary: invalid agent output falls back to rules; only the statisticia
   assert.equal(roles.treatment, "exposure"); assert.equal(roles.died, "outcome"); assert.equal(roles.total_cost_egp, "cost");
   const calls = h.ownerSql(`SELECT accepted FROM agent_call WHERE task = 'dictionary'`).trim();
   assert.equal(calls, "f");
+  // The rejected reply is kept for review, readable by InnovaStat only.
+  const log = await h.api("analyst", "GET", P("/studies/agent-calls?rejected=true"));
+  const call = log.body.items.find((x: any) => x.task === "dictionary");
+  assert.equal(call.has_rejected_output, true);
+  const full = await h.api("stat", "GET", P(`/studies/agent-calls/${call.id}`));
+  assert.equal(full.body.rejected_output.entries[0].source, "Not a column");
+  assert.equal((await h.api("director", "GET", P(`/studies/agent-calls/${call.id}`))).status, 403);
+  assert.equal((await h.api("director", "GET", P("/studies/agent-calls"))).status, 403);
   assert.equal((await h.api("analyst", "POST", P(`/studies/datasets/${ds}/clean`), {})).status, 409);
   let d = (await h.api("analyst", "GET", P(`/studies/datasets/${ds}`))).body;
   assert.equal((await h.api("analyst", "POST", P(`/studies/datasets/${ds}/dictionary/confirm`), { expected_version: d.version })).status, 403);

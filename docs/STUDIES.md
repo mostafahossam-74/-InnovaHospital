@@ -60,7 +60,9 @@ The statistics are validated against statsmodels 0.15 and lifelines 0.30 (`test/
 2. checked for meaning (known columns and variables, no post-exposure covariates, only numbers present in its input);
 3. used only if both checks pass. Otherwise the rule or template result is used, and the reasons are returned to the analyst.
 
-Every call is logged in `agent_call` (task, model, accepted, problems, tokens). Without `INNOVA_ANTHROPIC_API_KEY` the agent buttons are disabled and the rules and templates run. **The live model has not been exercised yet:** the tests use a fake agent to prove that invalid output is rejected and falls back.
+Every call is logged in `agent_call` (task, model, accepted, problems, tokens). When a reply is turned down, what Claude returned is kept in `rejected_output`, so a statistician can see what was rejected and why: `GET /v1/workspaces/{ws}/studies/agent-calls?rejected=true` lists recent calls and `GET …/studies/agent-calls/{id}` returns one with its rejected output (InnovaStat roles only; the hospital never sees it). Without `INNOVA_ANTHROPIC_API_KEY` the agent buttons are disabled and the rules and templates run.
+
+The number check exempts only the "p < 0.001" threshold, SHA hash names (such as SHA-256) and list markers ("(6)" at the start of a line or after ". ", ": " or "; ", and "6." or "6)" at the start of a line). A bracketed number mid-sentence, or a total Claude worked out itself, is still rejected. `npm run dev:agent-check` runs the live model through the whole cycle and prints the sentence around each number it rejected.
 
 ## Limitations
 

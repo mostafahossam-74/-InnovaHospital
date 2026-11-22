@@ -125,5 +125,19 @@ if (AI) {
   for (const c of d2.agent_calls) console.log(`  ${c.task.padEnd(11)} ${c.accepted ? "ACCEPTED" : "FELL BACK"} ${c.model} ${c.problems.join("; ")}`);
   console.log(`Hypotheses from Claude: ${d2.hypotheses.filter((h: any) => h.origin === "claude").length}; plans from Claude: ${d2.plans.filter((p: any) => p.origin === "claude").length}`);
   console.log(`Manuscript origin: ${ms.origin}${ms.fallback_reasons.length ? ` (${ms.fallback_reasons.join("; ")})` : ""}`);
+  // What Claude wrote where it was turned down: the sentence around each flagged number.
+  const rejected = (await api("analyst", "GET", `${S}/agent-calls?rejected=true`)).items.filter((c: any) => c.has_rejected_output);
+  if (rejected.length) console.log("Rejected agent output:");
+  for (const c of rejected) {
+    const out = (await api("analyst", "GET", `${S}/agent-calls/${c.id}`)).rejected_output;
+    const text = typeof out === "string" ? out : Object.values(out ?? {}).filter((v) => typeof v === "string").join(" ");
+    console.log(`  ${c.task}: ${c.problems.join("; ")}`);
+    for (const p of c.problems) {
+      const n = p.match(/number (-?[\d.]+)/)?.[1];
+      // Whole numbers only: "7" must not match inside "376" or "0.77".
+      const at = n ? text.search(new RegExp(`(?<![\\d.,])${n.replace(".", "\\.")}(?![\\d]|[.,]\\d)`)) : -1;
+      if (at >= 0) console.log(`    …${text.slice(Math.max(0, at - 140), at + 80).replace(/\s+/g, " ")}…`);
+    }
+  }
 }
 console.log(JSON.stringify({ workspace: ws, dataset: ds, proposals: proposals.length, project: approved.project_id, manuscript: ms.id, report: r.id }, null, 2));

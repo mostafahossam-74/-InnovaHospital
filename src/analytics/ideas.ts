@@ -150,7 +150,8 @@ const JSON_SCHEMA = {
   },
 };
 
-export interface IdeaDrafter { draft(g: GapForIdea): Promise<{ draft: IdeaDraft | null; problems: string[]; model: string }> }
+/** `rejected` is what Claude returned when the draft was turned down, kept for review. */
+export interface IdeaDrafter { draft(g: GapForIdea): Promise<{ draft: IdeaDraft | null; problems: string[]; model: string; rejected?: unknown }> }
 
 export class ClaudeIdeaDrafter implements IdeaDrafter {
   client: Anthropic;
@@ -175,11 +176,11 @@ export class ClaudeIdeaDrafter implements IdeaDrafter {
     if (response.stop_reason === "refusal") return { draft: null, problems: ["refused"], model: IDEA_MODEL };
     const text = response.content.filter((b: { type: string }) => b.type === "text").map((b: any) => b.text).join("");
     let parsed: unknown;
-    try { parsed = JSON.parse(text); } catch { return { draft: null, problems: ["invalid_json"], model: IDEA_MODEL }; }
+    try { parsed = JSON.parse(text); } catch { return { draft: null, problems: ["invalid_json"], model: IDEA_MODEL, rejected: text }; }
     const res = ideaDraftSchema.safeParse(parsed);
-    if (!res.success) return { draft: null, problems: res.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`), model: IDEA_MODEL };
+    if (!res.success) return { draft: null, problems: res.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`), model: IDEA_MODEL, rejected: parsed };
     const bad = unsupportedNumbers(res.data, g);
-    if (bad.length) return { draft: null, problems: [`numbers not in the gap: ${bad.join(", ")}`], model: IDEA_MODEL };
+    if (bad.length) return { draft: null, problems: [`numbers not in the gap: ${bad.join(", ")}`], model: IDEA_MODEL, rejected: parsed };
     return { draft: res.data, problems: [], model: IDEA_MODEL };
   }
 }
