@@ -8,19 +8,18 @@ export function WorkspaceSettings() {
   const { api, wp, ws, me, departments, refreshWorkspace } = useWs();
   const members = useLoad(() => api.get(`${wp}/memberships`), [wp]);
   const act = useAction();
-  const [s, setS] = useState({ name: ws.name, currency: ws.currency, small_cell: ws.small_cell, report_day: ws.report_day, timezone: ws.timezone });
+  const [s, setS] = useState({ name: ws.name, currency: ws.currency, small_cell: ws.small_cell, timezone: ws.timezone });
   const [g, setG] = useState({ subject: "", role: "investigator", department_id: "", email: "" });
   const [dep, setDep] = useState({ code: "", name: "" });
   return (
     <div className="ie-stack">
       <Panel title="Hospital settings">
-        <form className="ie-form" onSubmit={(e) => { e.preventDefault(); act.run(async () => { await api.patch(`${wp}/settings`, { expected_version: ws.version, ...s, small_cell: Number(s.small_cell), report_day: Number(s.report_day) }); refreshWorkspace(); }, "Saved."); }}>
+        <form className="ie-form" onSubmit={(e) => { e.preventDefault(); act.run(async () => { await api.patch(`${wp}/settings`, { expected_version: ws.version, ...s, small_cell: Number(s.small_cell) }); refreshWorkspace(); }, "Saved."); }}>
           <div className="ie-form-grid">
             <Field label="Name"><input className="ie-input" value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} /></Field>
             <Field label="Currency"><input className="ie-input" value={s.currency} onChange={(e) => setS({ ...s, currency: e.target.value.toUpperCase() })} /></Field>
             <Field label="Timezone"><input className="ie-input" value={s.timezone} onChange={(e) => setS({ ...s, timezone: e.target.value })} /></Field>
             <Field label="Disclosure threshold" hint="Cells below this count are suppressed in reports. Set by hospital policy."><input className="ie-input" type="number" min={1} value={s.small_cell} onChange={(e) => setS({ ...s, small_cell: Number(e.target.value) })} /></Field>
-            <Field label="Report day of month"><input className="ie-input" type="number" min={1} max={28} value={s.report_day} onChange={(e) => setS({ ...s, report_day: Number(e.target.value) })} /></Field>
           </div>
           <Button type="submit" disabled={act.busy}>Save settings</Button>
         </form>

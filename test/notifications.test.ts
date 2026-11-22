@@ -37,37 +37,40 @@ before(async () => {
 });
 after(() => h.close());
 
-test("a scheduler draft tells the reviewers, once", async () => {
-  await tick(h.pool, new Date("2026-03-02T12:00:00Z")); // Cairo, 1 March 09:00 has passed: February is drafted
+test("a coordinator's draft for a range of months tells the reviewers, once", async () => {
+  const d = await h.api("coordinator", "POST", P("/report-runs"), { period_start: "2026-01", period_end: "2026-02" }, key());
+  assert.equal(d.status, 201, JSON.stringify(d.body));
+  assert.equal(d.body.period, "2026-01_2026-02");
   await deliver();
-  assert.deepEqual(recipients(mail.take()), [addr("reviewer"), addr("reviewer2")].sort(), "not the director, the coordinators or the scheduler");
+  assert.deepEqual(recipients(mail.take()), [addr("reviewer"), addr("reviewer2")].sort(), "not the director, the coordinators or the author");
   const rows = sql(`SELECT recipient || ':' || status FROM notification WHERE workspace_id = '${ws}' AND kind = 'report_review_needed' ORDER BY 1`);
   assert.match(rows, /\|noemail:skipped/, "a reviewer with no email address is skipped, not retried");
   assert.equal(sql(`SELECT sent_to FROM notification WHERE workspace_id = '${ws}' AND recipient LIKE '%|reviewer2'`), addr("reviewer2"));
-  // Nothing is sent twice: not by another delivery pass, nor by another tick.
-  await tick(h.pool, new Date("2026-03-02T12:05:00Z"));
+  // Nothing is sent twice: not by another delivery pass, nor by a scheduler tick.
+  await tick(h.pool, new Date());
   await deliver();
-  assert.equal(mail.take().length, 0);
+  assert.equal(mail.take().filter((e) => /ready for review/.test(e.subject)).length, 0);
 });
 
 test("message wording: what to do and a link, nothing from the report", async () => {
   const out = new Outbox();
-  sql(`UPDATE notification SET status = 'pending', attempts = 0 WHERE workspace_id = '${ws}' AND recipient LIKE '%|reviewer'`);
+  sql(`UPDATE notification SET status = 'pending', attempts = 0 WHERE workspace_id = '${ws}' AND kind = 'report_review_needed' AND recipient LIKE '%|reviewer'`);
   await deliverDue(h.pool, new Date(), out, BASE);
-  const report = sql(`SELECT id FROM report_revision WHERE workspace_id = '${ws}' AND period = '2026-02'`);
+  const report = sql(`SELECT id FROM report_revision WHERE workspace_id = '${ws}' AND period = '2026-01_2026-02'`);
   assert.equal(out.sent.length, 1);
-  assert.equal(out.sent[0].subject, "[notify Hospital] Report for February 2026 is ready for review");
-  assert.equal(out.sent[0].text, `The monthly report for February 2026 has been drafted and is waiting for review.\n\nSign in to review it:\n` +
+  assert.equal(out.sent[0].subject, "[notify Hospital] Report for January–February 2026 is ready for review");
+  assert.equal(out.sent[0].text, `The report for January–February 2026 has been drafted and is waiting for review.\n\nSign in to review it:\n` +
     `${BASE}/#/w/${ws}/reports/${report}\n\nThis message does not include any report or project details. Sign in to see them.\n`);
 });
 
-test("approval tells the research director; a returned scheduler draft goes to the coordinators", async () => {
-  const report = sql(`SELECT id FROM report_revision WHERE workspace_id = '${ws}' AND period = '2026-02'`);
+test("approval tells the research director; a return goes back to the author", async () => {
+  // Returning a person's draft goes back to that person only.
+  const report = sql(`SELECT id FROM report_revision WHERE workspace_id = '${ws}' AND period = '2026-01_2026-02'`);
   const digest = (await h.api("reviewer", "GET", P(`/reports/${report}`))).body.digest;
-  assert.equal((await h.api("reviewer", "POST", P(`/reports/${report}/review`), { decision: "return", digest, note: "Add the ICU follow-up" })).status, 200);
+  assert.equal((await h.api("reviewer", "POST", P(`/reports/${report}/review`), { decision: "return", digest, note: "Check totals" })).status, 200);
   await deliver();
-  assert.deepEqual(recipients(mail.take()), [addr("cardio_coord"), addr("coordinator"), addr("icu_coord")]);
-  // A person's draft: reviewers are told; on approval, the director.
+  assert.deepEqual(recipients(mail.take()), [addr("coordinator")]);
+  // On approval, the director.
   const d = await h.api("coordinator", "POST", P("/report-runs"), { period: "2026-02" }, key());
   await deliver();
   assert.deepEqual(recipients(mail.take()), [addr("reviewer"), addr("reviewer2")].sort());
@@ -75,13 +78,14 @@ test("approval tells the research director; a returned scheduler draft goes to t
   await deliver();
   const sent = mail.take();
   assert.deepEqual(recipients(sent), [addr("director")]);
-  assert.match(sent[0].subject, /ready for release/);
-  // Returning a person's draft goes back to that person only.
+  assert.match(sent[0].subject, /Report for February 2026 is ready for release/);
+  // A draft written by an earlier version's automatic scheduler goes to the coordinators when returned.
   const d2 = await h.api("coordinator", "POST", P("/report-runs"), { period: "2026-03" }, key());
   await deliver(); mail.take();
-  assert.equal((await h.api("reviewer", "POST", P(`/reports/${d2.body.id}/review`), { decision: "return", digest: d2.body.digest, note: "Check totals" })).status, 200);
+  sql(`UPDATE report_revision SET author = 'service:scheduler' WHERE id = '${d2.body.id}'`);
+  assert.equal((await h.api("reviewer", "POST", P(`/reports/${d2.body.id}/review`), { decision: "return", digest: d2.body.digest, note: "Add ICU" })).status, 200);
   await deliver();
-  assert.deepEqual(recipients(mail.take()), [addr("coordinator")]);
+  assert.deepEqual(recipients(mail.take()), [addr("cardio_coord"), addr("coordinator"), addr("icu_coord")]);
 });
 
 test("a project put on hold tells its PI and that department's coordinators", async () => {
@@ -145,14 +149,15 @@ test("a failing send is retried with backoff, then marked failed", async () => {
 });
 
 test("a scheduled job that fails for good tells the coordinators", async () => {
-  const broken = { report_draft: async () => { throw new Error("boom"); }, expiry_check: async () => ({}) };
-  let now = new Date("2026-07-01T12:00:00Z");
+  const broken = { expiry_check: async () => { throw new Error("boom"); } };
+  let now = new Date("2026-07-01T06:00:00Z"); // 1 July in Cairo; retries fit within the day
   for (let i = 0; i < 5; i++) { await tick(h.pool, now, { actions: broken }); now = new Date(now.getTime() + 3 * 3_600_000); }
-  assert.equal(sql(`SELECT status FROM scheduled_job WHERE workspace_id = '${ws}' AND kind = 'report_draft' AND job_key = '2026-06'`), "failed");
+  assert.equal(sql(`SELECT status FROM scheduled_job WHERE workspace_id = '${ws}' AND kind = 'expiry_check' AND job_key = '2026-07-01'`), "failed");
   await deliver();
   const sent = mail.take().filter((e) => /scheduled task/.test(e.subject));
   assert.deepEqual(recipients(sent), [addr("cardio_coord"), addr("coordinator"), addr("icu_coord")]);
-  assert.match(sent[0].text, /scheduled monthly report draft for June 2026 failed after 5 attempts/);
+  assert.match(sent[0].text, /scheduled governance expiry check for 2026-07-01 failed after 5 attempts/);
+  assert.ok(sent[0].text.includes(`${BASE}/#/w/${ws}/projects`));
 });
 
 test("the log transport writes the email to the log instead of sending it", async () => {

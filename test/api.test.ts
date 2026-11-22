@@ -191,6 +191,8 @@ test("monthly report: snapshot, separation of duties, freshness, release, downlo
   assert.equal(ind.ONCO.numerator, undefined);
   assert.equal(ind.GIM.status, "not_applicable");
   assert.equal(ind.ICU.status, "missing");
+  // No hospital-wide total while a department is missing.
+  assert.deepEqual(rep.snapshot.indicator_totals.map((t: any) => [t.code, t.status, t.departments_pending]), [["followup", "incomplete", 1]]);
   assert.equal(rep.snapshot.research_intelligence, null); // nothing released by InnovaStat yet, so nothing internal shows
   assert.ok(rep.snapshot.actions.some((a: any) => /ICU/.test(a.action)));
   assert.ok(rep.snapshot.risks.on_hold.length === 1);

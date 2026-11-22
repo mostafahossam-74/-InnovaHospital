@@ -40,7 +40,7 @@ const TONE: Record<string, string> = {
   governance: "info", active: "good", on_hold: "warn", complete: "good", archived: "neutral",
   approved: "good", denied: "bad", determination: "good", revoked: "bad",
   planned: "neutral", in_progress: "info", blocked: "bad", done: "good", cancelled: "neutral", qc: "info", published: "good", released: "good",
-  superseded: "neutral", missing: "bad", unverified: "warn", not_applicable: "neutral", suppressed: "neutral",
+  superseded: "neutral", missing: "bad", unverified: "warn", not_applicable: "neutral", suppressed: "neutral", incomplete: "warn",
   dominant: "good", dominated: "bad", more_costly_more_effective: "info", less_costly_less_effective: "warn",
   locked: "good", pending_review: "info", significant: "good", not_significant: "warn", hospital_approved: "good", hospital_returned: "warn", hospital_accepted: "good", sent: "info", uploaded: "neutral", dictionary: "info", cleaning: "info", hypotheses: "info", analysis: "info", received: "info",
   lead: "neutral", qualified: "info", proposal: "info", contracting: "info", signed: "good", closed: "neutral", lost: "bad",
@@ -65,7 +65,13 @@ export function Tags({ items }: { items: string[] }) {
 export const fmtDate = (v: string | null | undefined) => (v ? new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—");
 export const fmtDateTime = (v: string | null | undefined) =>
   v ? new Date(v).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-export const fmtPeriod = (p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+const fmtMonth = (p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+/** One month ("October 2026") or a report range "YYYY-MM_YYYY-MM" ("January – April 2026"). */
+export const fmtPeriod = (p: string) => {
+  const [a, b] = p.split("_");
+  if (!b) return fmtMonth(a);
+  return a.slice(0, 4) === b.slice(0, 4) ? `${fmtMonth(a).split(" ")[0]} – ${fmtMonth(b)}` : `${fmtMonth(a)} – ${fmtMonth(b)}`;
+};
 export const shortSub = (actor: string | null | undefined) => (actor ? actor.slice(actor.lastIndexOf("|") + 1) : "—");
 export const newKey = () => crypto.randomUUID();
 

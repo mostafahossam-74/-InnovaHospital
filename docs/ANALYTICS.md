@@ -44,9 +44,11 @@ With `INNOVA_ANTHROPIC_API_KEY` set, "Draft with Claude" sends one confirmed gap
 
 ## Disclosure control in reports
 
-The monthly report suppresses an indicator when its numerator or its complement is below the workspace threshold (default 5, set by hospital policy). It suppresses a condition's case count when it is below the threshold, and its mortality when deaths or survivors are below it. Missing, unverified, returned, not applicable (zero eligible cases) and suppressed are kept distinct. Target tests use exact integer arithmetic.
+The executive report (for any range of months; data is monthly) suppresses a department's indicator when its numerator or its complement is below the workspace threshold (default 5, set by hospital policy). Missing, unverified, returned, not applicable (zero eligible cases) and suppressed are kept distinct. Target tests use exact integer arithmetic.
 
-Differencing between department and executive views, and between periods, still needs review before multi-site or department-level releases (Handoff §5 step 4).
+The report also gives a hospital-wide rate per indicator, pooled over the reporting departments under the same definition version (`src/reports/disclosure.ts`). It is withheld while any department is missing, unverified or returned (`incomplete`), and suppressed when the total's numerator or complement is below the threshold, or when subtracting the shown departments would leave a remainder whose events or non-events are below it (`differencing`): with one suppressed department the total is always withheld.
+
+Reports cover ranges of months, which can overlap reports already released. Before a figure is shown, it is checked together with every released report (published, superseded or withdrawn) for the same indicator: every block of departments × months that the new figures would make computable — by any linear combination with the released figures, not only one subtraction — is worked out from the figures as published, and a figure is hidden (`overlap`) if any such block has fewer than the threshold of events or non-events. The check covers every group of departments and every set of months when a hospital has up to 7 reporting departments and the reports involved split the months into up to 8 blocks; beyond that it checks single departments, pairs and the whole hospital. Blocks with different months for different departments are not searched. Approval and release re-check the stored snapshot and refuse with `disclosure_risk`; a report released after a draft makes the draft stale, so it is rebuilt against it.
 
 ## Limitations to state in every output
 

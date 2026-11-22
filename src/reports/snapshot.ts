@@ -1,9 +1,12 @@
-// Monthly Executive Report snapshot (Handoff §5). Built deterministically from
-// the database as of the end of the reporting month, so rebuilding it later
+// Executive report snapshot (Handoff §5) for the months a coordinator chooses. Built
+// deterministically from the database as of the end of the last month, so rebuilding it later
 // gives the same digest unless an input changed; approval and release compare
 // a fresh build against the stored one.
 import type { Client } from "../db.ts";
 import { gateProblems } from "../api-office.ts";
+import { findLeak, pooledIndicator } from "./disclosure.ts";
+import { parseReportKey } from "../period.ts";
+import type { DepartmentCell, Figure } from "./disclosure.ts";
 
 const monthEnd = (period: string) => {
   const [y, m] = period.split("-").map(Number);
@@ -16,8 +19,10 @@ const n = (count: number, one: string, many = `${one}s`) => `${count} ${count ==
 
 export type IndicatorStatus = "missing" | "unverified" | "returned" | "not_applicable" | "suppressed" | "verified";
 
+/** `period` is the report key: one month (YYYY-MM) or a range (YYYY-MM_YYYY-MM). Data is monthly. */
 export async function buildSnapshot(c: Client, wsId: string, period: string) {
-  const end = monthEnd(period), start = `${period}-01`;
+  const range = parseReportKey(period);
+  const end = monthEnd(range.end), start = `${range.start}-01`, label = range.label;
   const ws = (await c.query("SELECT name, country, currency, small_cell, timezone FROM workspace WHERE id = $1", [wsId])).rows[0];
   const small = ws.small_cell as number;
   const depts = (await c.query("SELECT id, code, name FROM department WHERE active AND reporting_inclusion ORDER BY name")).rows;
@@ -55,30 +60,83 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
 
   // ---- Quality indicators (with disclosure control) ------------------------------
   const defs = (await c.query("SELECT id, code, name, def_version, target_bp, direction FROM indicator_definition WHERE active ORDER BY code")).rows;
-  const obs = (await c.query("SELECT definition_id, department_id, numerator, denominator, status, input_version FROM indicator_observation WHERE period = $1", [period])).rows;
-  const indicators = [];
-  for (const d of defs) for (const dep of depts) {
-    const o = obs.find((x) => x.definition_id === d.id && x.department_id === dep.id);
-    const item: Record<string, unknown> = { department: dep.name, code: d.code, name: d.name, definition_version: d.def_version };
-    let status: IndicatorStatus;
-    if (!o) status = "missing";
-    else if (o.status === "returned") status = "returned";
-    else if (o.status !== "verified") status = "unverified";
-    else if (o.denominator === 0) status = "not_applicable"; // zero eligible cases differs from missing data
-    else if (o.numerator < small || o.denominator - o.numerator < small) status = "suppressed"; // numerator and complement
-    else status = "verified";
-    item.status = status;
-    if (o) item.input_version = o.input_version;
-    if (status === "verified") {
-      const pct = (100 * o.numerator) / o.denominator;
-      item.numerator = o.numerator; item.denominator = o.denominator; item.percent = r2(pct);
-      if (d.target_bp !== null) {
-        item.target_percent = d.target_bp / 100;
-        // Exact integer comparison, no rounding (Handoff §5 step 3).
-        item.meets_target = d.direction === "higher_better" ? o.numerator * 10000 >= o.denominator * d.target_bp : o.numerator * 10000 <= o.denominator * d.target_bp;
+  const obs = (await c.query(`SELECT definition_id, department_id, period, numerator, denominator, status, input_version FROM indicator_observation
+    WHERE period BETWEEN $1 AND $2 ORDER BY period`, [range.start, range.end])).rows;
+  const indicators: Record<string, unknown>[] = [];
+  const indicatorTotals: Record<string, unknown>[] = [];
+  // Reports released before (published, later superseded or withdrawn): what readers have already
+  // seen, so this report cannot be combined with them to reveal a small count (overlapping ranges).
+  const released = (await c.query(`SELECT period, snapshot FROM report_revision WHERE published_at IS NOT NULL AND period <> $1 ORDER BY period, revision`, [period])).rows
+    .map((r) => ({ months: parseReportKey(r.period).months, snapshot: r.snapshot }));
+  for (const d of defs) {
+    const cells: DepartmentCell[] = [];
+    const rows: Record<string, unknown>[] = [];
+    for (const dep of depts) {
+      // The department's months in the range, added up once every month is in and verified.
+      const mine = obs.filter((x) => x.definition_id === d.id && x.department_id === dep.id);
+      const o = mine.length ? { numerator: mine.reduce((sum, x) => sum + x.numerator, 0), denominator: mine.reduce((sum, x) => sum + x.denominator, 0) } : null;
+      const item: Record<string, unknown> = { department: dep.name, code: d.code, name: d.name, definition_version: d.def_version };
+      let status: IndicatorStatus;
+      if (mine.length < range.months.length) status = "missing";
+      else if (mine.some((x) => x.status === "returned")) status = "returned";
+      else if (mine.some((x) => x.status !== "verified")) status = "unverified";
+      else if (o!.denominator === 0) status = "not_applicable"; // zero eligible cases differs from missing data
+      else if (o!.numerator < small || o!.denominator - o!.numerator < small) status = "suppressed"; // numerator and complement
+      else status = "verified";
+      item.status = status;
+      if (range.months.length > 1 && mine.length < range.months.length) item.months_missing = range.months.filter((m) => !mine.some((x) => x.period === m));
+      if (mine.length) item.input_version = range.months.length > 1 ? mine.map((x) => `${x.period}:${x.input_version}`).join(",") : mine[0].input_version;
+      if (status === "verified") {
+        const v = o!;
+        item.numerator = v.numerator; item.denominator = v.denominator; item.percent = r2((100 * v.numerator) / v.denominator);
+        if (d.target_bp !== null) {
+          item.target_percent = d.target_bp / 100;
+          // Exact integer comparison, no rounding (Handoff §5 step 3).
+          item.meets_target = d.direction === "higher_better" ? v.numerator * 10000 >= v.denominator * d.target_bp : v.numerator * 10000 <= v.denominator * d.target_bp;
+        }
+      }
+      rows.push(item);
+      cells.push({ status, numerator: o ? o.numerator : null, denominator: o ? o.denominator : null });
+    }
+    // Hospital-wide rate over the same definition version, hidden when it or the remainder
+    // after subtracting the shown departments is small (differencing within the report).
+    let total: Record<string, unknown> = { code: d.code, name: d.name, definition_version: d.def_version, ...pooledIndicator(cells, small, d) };
+
+    // Differencing across reports: hide figures that, combined with released reports, would reveal
+    // a small count for some departments and months. One figure at a time, until nothing leaks.
+    const mineReleased = released.map((r) => ({
+      months: r.months,
+      rows: (r.snapshot.indicators ?? []).filter((x: any) => x.code === d.code && x.definition_version === d.def_version),
+      total: (r.snapshot.indicator_totals ?? []).find((x: any) => x.code === d.code && x.definition_version === d.def_version),
+    })).filter((r) => r.rows.length);
+    if (mineReleased.length) {
+      const shownFig = (x: any) => typeof x?.numerator === "number" || x?.status === "not_applicable";
+      // Figures as published (a not-applicable row shows 0 of 0).
+      const nums = (x: any) => ({ numerator: x.numerator ?? 0, denominator: x.denominator ?? 0 });
+      const oldFigs: Figure[] = mineReleased.flatMap((r) => [
+        ...r.rows.filter(shownFig).map((x: any) => ({ depts: [x.department], months: r.months, ...nums(x) })),
+        ...(shownFig(r.total) ? [{ depts: r.rows.map((x: any) => x.department), months: r.months, ...nums(r.total) }] : []),
+      ]);
+      for (let guard = 0; guard <= rows.length; guard++) {
+        // The new report's figures, total first so it is the first to go.
+        const newFigs: { fig: Figure; row: number | "total" }[] = [
+          ...(shownFig(total) ? [{ fig: { depts: rows.map((x) => x.department as string), months: range.months, ...nums(total) }, row: "total" as const }] : []),
+          ...rows.map((x, i) => ({ x, i })).filter(({ x }) => shownFig(x)).map(({ x, i }) => ({ fig: { depts: [x.department as string], months: range.months, ...nums(x) }, row: i })),
+        ];
+        const leak = findLeak(small, newFigs.map((f) => f.fig), oldFigs);
+        if (!leak) break;
+        const hide = newFigs[leak.figure].row;
+        if (hide === "total") total = { code: d.code, name: d.name, definition_version: d.def_version, status: "suppressed", departments: rows.length, suppression_reason: "overlap" };
+        else {
+          const x = rows[hide];
+          rows[hide] = { department: x.department, code: x.code, name: x.name, definition_version: x.definition_version, status: "suppressed", suppression_reason: "overlap", input_version: x.input_version };
+          cells[hide] = { ...cells[hide], status: "suppressed" };
+          if (shownFig(total)) total = { code: d.code, name: d.name, definition_version: d.def_version, ...pooledIndicator(cells, small, d) };
+        }
       }
     }
-    indicators.push(item);
+    indicators.push(...rows);
+    indicatorTotals.push(total);
   }
   const applicable = indicators.filter((i) => i.status !== "not_applicable");
   const completeness = applicable.length ? r2((100 * applicable.filter((i) => ["verified", "suppressed"].includes(i.status as string)).length) / applicable.length) : null;
@@ -124,27 +182,27 @@ export async function buildSnapshot(c: Client, wsId: string, period: string) {
   const ideasTotal = ideaCounts.reduce((sum, x) => sum + x.n, 0);
   const withTarget = verified.filter((i) => i.meets_target !== undefined);
   const summary = [
-    `${n(active, "project")} active at cutoff; ${activated} activated during ${period}.`,
+    `${n(active, "project")} active at cutoff; ${activated} activated during ${label}.`,
     `${n(ideasTotal, "research idea")} in the pipeline${fromGaps ? `, ${fromGaps} generated from hospital-data research gaps` : ""}.`,
-    verified.length ? `${withTarget.filter((i) => i.meets_target).length} of ${n(withTarget.length, "verified indicator")} met target; indicator completeness ${completeness}%.` : `No verified quality indicators for ${period}.`,
+    verified.length ? `${withTarget.filter((i) => i.meets_target).length} of ${n(withTarget.length, "verified indicator")} met target; indicator completeness ${completeness}%.` : `No verified quality indicators for ${label}.`,
     intelligence ? `InnovaStat has suggested ${n(ideasReleased.length, "research idea")} from hospital data: ${intelligence.ideas_approved} approved, ${awaiting} awaiting a decision.` : "No InnovaStat research report has been released yet.",
     `${n(onHold.length, "project")} on hold, ${n(overdue.length, "overdue milestone")}, ${n(expiring.length, "approval")} expiring within 60 days.`,
   ];
 
   return {
-    period, cutoff: end, hospital: ws.name, country: ws.country, currency: ws.currency, disclosure_threshold: small,
+    period, period_start: range.start, period_end: range.end, period_label: label, months: range.months.length, cutoff: end, hospital: ws.name, country: ws.country, currency: ws.currency, disclosure_threshold: small,
     executive_summary: summary,
     funnel: { ideas_by_status: ideaCounts, triaged_in_period: triage.length, median_triage_days: triage.length ? r2(median(triage)!) : null, ideas_from_gaps: fromGaps },
     portfolio: { by_stage: stages, activated_in_period: activated, by_category: byCategory },
     milestones: { due_in_period: ms.length, completed_on_time: onTime, on_time_rate_percent: ms.length ? r2((100 * onTime) / ms.length) : null, overdue_unresolved: overdue.length },
     outputs, training: { ...training, completion_percent: training.enrolled ? r2((100 * training.completed) / training.enrolled) : null },
-    partnerships, indicators, indicator_completeness_percent: completeness,
+    partnerships, indicators, indicator_totals: indicatorTotals, indicator_completeness_percent: completeness,
     research_intelligence: intelligence,
     risks: { on_hold: onHold.map((p) => ({ project: p.title, reason: p.hold_reason })), approvals_expiring: expiring, approval_problems: gateRisks },
     actions,
     limitations: [
       "Aggregate data only: no patient-level records are held. Associations from hospital data are unadjusted and do not show causation.",
-      `Cells with fewer than ${small} events or non-events are suppressed.`,
+      `Cells with fewer than ${small} events or non-events are suppressed. A hospital-wide total is also suppressed when subtracting the shown departments would reveal such a cell.`,
       "Missing, unverified, not-applicable and suppressed values are excluded from target comparisons.",
     ],
   };

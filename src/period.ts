@@ -1,6 +1,5 @@
-// Reporting-period arithmetic. A report is labelled with the month it covers.
-// At the workspace's schedule (e.g. day 1, 09:00 Africa/Cairo) the scheduler
-// queues the previous, now-closed, local month (Developer_Handoff §3).
+// Reporting-period arithmetic: months, local dates in a workspace's timezone, and the
+// ranges of months a report covers.
 
 export type Period = { period: string; start: string; end: string };
 
@@ -61,35 +60,41 @@ export function isValidTimeZone(tz: string): boolean {
   }
 }
 
-export type ScheduleSettings = { timezone: string; schedule_day: number; schedule_hour: number };
-
-/**
- * Returns the most recent period whose scheduled collection time is at or
- * before `now`, with that scheduled UTC instant. Inserting the run is
- * idempotent on (workspace, period_start), so calling this every 15 minutes
- * yields exactly one run per closed month.
- */
-export function duePeriod(now: Date, s: ScheduleSettings): Period & { scheduledAt: Date } {
-  const local = localParts(now, s.timezone);
-  let year = local.year;
-  let month = local.month;
-  let scheduledAt = zonedTimeToUtc(year, month, s.schedule_day, s.schedule_hour, s.timezone);
-  if (now.getTime() < scheduledAt.getTime()) {
-    // This month's slot has not arrived yet; the latest due slot was last month's.
-    month -= 1;
-    if (month === 0) { month = 12; year -= 1; }
-    scheduledAt = zonedTimeToUtc(year, month, s.schedule_day, s.schedule_hour, s.timezone);
-  }
-  // The slot in local month M covers month M-1.
-  let pYear = year;
-  let pMonth = month - 1;
-  if (pMonth === 0) { pMonth = 12; pYear -= 1; }
-  return { ...monthWindow(pYear, pMonth), scheduledAt };
-}
-
 /** The local calendar date (YYYY-MM-DD) of `now` in an IANA zone, and the UTC instant of its midnight. */
 export function localDate(now: Date, timeZone: string): { date: string; midnight: Date } {
   const p = localParts(now, timeZone);
   const date = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
   return { date, midnight: zonedTimeToUtc(p.year, p.month, p.day, 0, timeZone) };
+}
+
+// ---- Report ranges -------------------------------------------------------------------------
+// A report covers one month or a range of months; data is entered per month. The report key is
+// 'YYYY-MM' for one month and 'YYYY-MM_YYYY-MM' for a range.
+export const MAX_REPORT_MONTHS = 36;
+export type ReportRange = { key: string; start: string; end: string; months: string[]; label: string };
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+export function reportRange(start: string, end: string = start): ReportRange {
+  if (!PERIOD_RE.test(start) || !PERIOD_RE.test(end)) throw new RangeError("Months must be YYYY-MM");
+  if (end < start) throw new RangeError("The end month is before the start month");
+  const months: string[] = [];
+  for (let [y, m] = start.split("-").map(Number); `${y}-${String(m).padStart(2, "0")}` <= end; m === 12 ? (y++, m = 1) : m++) {
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+    if (months.length > MAX_REPORT_MONTHS) throw new RangeError(`A report covers at most ${MAX_REPORT_MONTHS} months`);
+  }
+  return { key: start === end ? start : `${start}_${end}`, start, end, months, label: periodLabel(start === end ? start : `${start}_${end}`) };
+}
+
+export function parseReportKey(key: string): ReportRange {
+  const [start, end = start] = key.split("_");
+  return reportRange(start, end);
+}
+
+/** "October 2026", "January–April 2026" or "November 2025–February 2026". */
+export function periodLabel(key: string): string {
+  const [start, end = start] = key.split("_");
+  const name = (p: string) => `${MONTH_NAMES[Number(p.slice(5, 7)) - 1]} ${p.slice(0, 4)}`;
+  if (!PERIOD_RE.test(start) || !PERIOD_RE.test(end)) return key;
+  if (start === end) return name(start);
+  return start.slice(0, 4) === end.slice(0, 4) ? `${MONTH_NAMES[Number(start.slice(5, 7)) - 1]}–${name(end)}` : `${name(start)}–${name(end)}`;
 }

@@ -47,7 +47,7 @@ const NAV: NavItem[] = [
   { id: "projects", label: "Studies", ar: "المشاريع", icon: FlaskConical, title: "Ongoing studies", subtitle: "Studies from approval to publication, gated by ethics and data approvals.", show: (c) => c.staff },
   { id: "indicators", label: "Quality indicators", ar: "مؤشرات الجودة", icon: Activity, title: "Quality indicators", subtitle: "Versioned definitions, monthly values and independent verification.", show: (c) => c.staff },
   { id: "office", label: "Training & partners", ar: "التدريب والشراكات", icon: GraduationCap, title: "Training, outputs and partnerships", subtitle: "Research capacity, publications and the funding pipeline.", show: (c) => c.staff },
-  { id: "reports", label: "Monthly reports", ar: "التقارير الشهرية", icon: FileText, title: "Monthly executive reports", subtitle: "Drafted by the coordinator, reviewed, released by the research director.", show: () => true },
+  { id: "reports", label: "Executive reports", ar: "التقارير التنفيذية", icon: FileText, title: "Executive reports", subtitle: "For the months the coordinator chooses: drafted by the coordinator, reviewed, released by the research director.", show: () => true },
   { id: "settings", label: "Settings & access", ar: "الإعدادات", icon: Wrench, title: "Settings and access", subtitle: "Departments, role grants and reporting policy.", show: (c) => c.has("hospital_admin") },
 ];
 

@@ -11,12 +11,14 @@ import type { RouteDeps } from "./api-common.ts";
 import { buildSnapshot } from "./reports/snapshot.ts";
 import { renderPdf } from "./reports/pdf.ts";
 import { membersWithRoles, notify } from "./notifications.ts";
+import { disclosureProblems } from "./reports/disclosure.ts";
+import { parseReportKey, reportRange } from "./period.ts";
 import type { ObjectStore } from "./storage.ts";
 
 export type ReportDeps = { store: ObjectStore; synthetic?: boolean };
 
-/** Drafts the next revision of a period's report from a fresh snapshot. Called by the
- *  report-runs route and by the scheduler; review and release stay with people. */
+/** Drafts the next revision of a report from a fresh snapshot. `period` is the report key:
+ *  one month (YYYY-MM) or a range (YYYY-MM_YYYY-MM). Review and release stay with people. */
 export async function draftReport(c: Client, wsId: string, period: string, actor: string, correlationId: string) {
   const snapshot = await buildSnapshot(c, wsId, period);
   const digest = sha256(canonicalJson(snapshot));
@@ -28,14 +30,27 @@ export async function draftReport(c: Client, wsId: string, period: string, actor
   const reviewers = await membersWithRoles(c, ["innovastat_reviewer"]);
   await notify(c, wsId, { kind: "report_review_needed", recipients: reviewers.length ? reviewers : await membersWithRoles(c, ["research_director"]),
     exclude: [actor], entityType: "report_revision", entityId: id, linkPath: `/#/w/${wsId}/reports/${id}`, params: { period }, dedupe: `report_review_needed:${id}` });
-  return { id, period, revision, digest };
+  const { start, end, label } = parseReportKey(period);
+  return { id, period, period_start: start, period_end: end, period_label: label, revision, digest };
+}
+
+/** Refuses to approve or release a snapshot that would disclose a small count (independent re-check). */
+function requireSafeDisclosure(snapshot: Parameters<typeof disclosureProblems>[0]) {
+  const problems = disclosureProblems(snapshot);
+  if (problems.length) throw new ApiError(409, "disclosure_risk", "The report would disclose a count below the hospital's threshold. Draft a new revision.", problems);
 }
 
 export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps) {
   r.on("POST", `${W}/report-runs`, (ctx) => scoped(ctx, ["coordinator"], async (c, me, wsId) => {
-    const b = z.object({ period }).strict().parse(await ctx.body());
-    return idempotent(c, ctx, wsId, `report.draft:${b.period}`, async () =>
-      ({ status: 201, body: await draftReport(c, wsId, b.period, actorId(me), ctx.requestId) }));
+    // One month (period) or a range of months chosen by the coordinator (period_start, period_end).
+    const b = z.object({ period: period.optional(), period_start: period.optional(), period_end: period.optional() }).strict()
+      .refine((x) => (x.period === undefined) !== (x.period_start === undefined && x.period_end === undefined),
+        { message: "Send period, or period_start and period_end" }).parse(await ctx.body());
+    let key: string;
+    try { key = (b.period ? reportRange(b.period) : reportRange(b.period_start ?? b.period_end!, b.period_end ?? b.period_start)).key; }
+    catch (e) { throw new ApiError(422, "invalid_period", (e as Error).message); }
+    return idempotent(c, ctx, wsId, `report.draft:${key}`, async () =>
+      ({ status: 201, body: await draftReport(c, wsId, key, actorId(me), ctx.requestId) }));
   }));
 
   r.on("GET", `${W}/reports`, (ctx) => scoped(ctx, ROLES, async (c, _me, _ws, access) => {
@@ -62,6 +77,7 @@ export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps)
     if (rep.status !== "draft") throw new ApiError(409, "invalid_state", `The report is ${rep.status}`);
     if (rep.digest !== b.digest) throw new ApiError(409, "stale_digest", "You reviewed a different version of this report");
     if (rep.author === actorId(me)) throw forbidden("The author cannot review their own report");
+    if (b.decision === "approve") requireSafeDisclosure(rep.snapshot);
     if (b.decision === "approve" && sha256(canonicalJson(await buildSnapshot(c, wsId, rep.period))) !== rep.digest) {
       throw new ApiError(409, "inputs_changed", "Report inputs changed after drafting. Draft a new revision.");
     }
@@ -90,6 +106,7 @@ export function registerReportRoutes({ r, scoped }: RouteDeps, deps: ReportDeps)
       if (rep.status !== "approved") throw new ApiError(409, "invalid_state", "Only an approved report can be published");
       if (rep.digest !== b.digest) throw new ApiError(409, "stale_digest", "You are releasing a different version of this report");
       if ([rep.author, rep.reviewer].includes(actorId(me))) throw forbidden("Release needs someone other than the author and the reviewer");
+      requireSafeDisclosure(rep.snapshot);
       if (sha256(canonicalJson(await buildSnapshot(c, wsId, rep.period))) !== rep.digest) throw new ApiError(409, "inputs_changed", "Report inputs changed after approval. Draft a new revision.");
       const newer = (await c.query("SELECT max(revision) AS v FROM report_revision WHERE period = $1 AND status IN ('published','superseded')", [rep.period])).rows[0].v;
       if (newer !== null && newer >= rep.revision) throw new ApiError(409, "newer_release", "A newer revision was already released");
