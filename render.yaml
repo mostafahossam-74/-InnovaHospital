@@ -47,7 +47,8 @@ services:
     region: frankfurt
     plan: starter
     branch: main
-    buildCommand: npm ci && cd web && npm ci && VITE_AUTH_MODE=local npm run build
+    # NODE_ENV=production (set below) makes npm skip devDependencies; the web build needs them (Vite, TypeScript).
+    buildCommand: npm ci && cd web && npm ci --include=dev && VITE_AUTH_MODE=local npm run build
     preDeployCommand: node scripts/render.ts predeploy
     startCommand: node scripts/render.ts api
     healthCheckPath: /healthz
