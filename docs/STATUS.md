@@ -2,7 +2,7 @@
 
 | Step | State | Notes |
 |---|---|---|
-| 1. Repository, staging, reference | Done locally | The Python reference and contracts are in `reference/` and `contracts/`. The local synthetic demo completes with a released JSON snapshot and PDF (`npm run dev:seed`, `docs/sample-executive-report.pdf`). No staging environment yet. CI (`.github/workflows/test.yml`) runs the type checks, all tests against PostgreSQL 16 and the web build on every pull request. Migrations are applied with `npm run db:migrate`. The protected prototype's source was not available. |
+| 1. Repository, staging, reference | Done locally | The Python reference and contracts are in `reference/` and `contracts/`. The local synthetic demo completes with a released JSON snapshot and PDF (`npm run dev:seed`, `docs/sample-executive-report.pdf`). Staging: a Render Blueprint (`render.yaml`, `scripts/render.ts`, README "Deploying to Render") is ready, rehearsed against a non-superuser database owner; not deployed yet. CI (`.github/workflows/test.yml`) runs the type checks, all tests against PostgreSQL 16 and the web build on every pull request. Migrations are applied with `npm run db:migrate`. The protected prototype's source was not available. |
 | 2. Identity, grants, audit | Done (API) | OIDC bearer tokens or built-in accounts. Department-scoped role grants with end dates, resolved on every request. Row-level security on every tenant table. Append-only audit. Tests: cross-tenant lists, reads, downloads and direct SQL. |
 | 3. Intake, transitions, review queue | Done | Ideas with history (returns keep it), triage with a reason and priority, idempotent atomic conversion, optimistic concurrency (409 on stale writes). |
 | 4. Governance | Done | Ethics and data decisions per protocol version, with expiry, revocation and supersession. Activation is gated. Revocation, expiry and amendment put an active project on hold, and gated writes recheck validity. Expiry sweep: `POST /governance/expiry-check`. |
@@ -21,4 +21,4 @@
 - Whether the Claude agent may be enabled, and under which data-processing terms. The patient-level upload itself conflicts with the handoff's pilot scope ("patient-level records… stay in the hospital-approved environment"), so the data-sharing agreement must explicitly allow it.
 - Multi-sheet workbooks (joining admissions, labs and costs) and QALY-based economic models are not built yet.
 - Arabic translations beyond navigation labels: RTL layout is in place, but the terminology needs hospital sign-off.
-- Hosting: deploy as InnovaEvidence does (single Ubuntu server or Render). The deploy scripts are not yet adapted.
+- Hosting: staging on Render (`render.yaml`). Production hosting, and where hospital data may be processed, are for the hospital's data-protection review.
